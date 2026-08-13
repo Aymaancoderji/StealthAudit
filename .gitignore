@@ -5,6 +5,7 @@ node_modules/
 *.log
 .env
 .DS_Store
+.claude/
 
 # Downloaded browser/driver binaries (fetched via npm postinstall /
 # `npx playwright install` / `npx @puppeteer/browsers install` / the
