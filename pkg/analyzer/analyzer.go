@@ -3,9 +3,9 @@
 package analyzer
 
 import (
-	"github.com/stealthaudit/stealthaudit/pkg/collector"
-	"github.com/stealthaudit/stealthaudit/pkg/leakdetector"
-	"github.com/stealthaudit/stealthaudit/pkg/network"
+	"github.com/Aymaancoderji/StealthAudit/pkg/collector"
+	"github.com/Aymaancoderji/StealthAudit/pkg/leakdetector"
+	"github.com/Aymaancoderji/StealthAudit/pkg/network"
 )
 
 // Category is one of the four sub-scores that make up the Stealth Score.

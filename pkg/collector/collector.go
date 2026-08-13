@@ -5,7 +5,7 @@ package collector
 import (
 	"context"
 
-	"github.com/stealthaudit/stealthaudit/pkg/orchestrator"
+	"github.com/Aymaancoderji/StealthAudit/pkg/orchestrator"
 )
 
 // SchemaVersion is bumped whenever the Fingerprint struct's shape changes

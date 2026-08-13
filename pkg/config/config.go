@@ -2,7 +2,7 @@
 // command, shared across the orchestrator, collector, and analyzer.
 package config
 
-import "github.com/stealthaudit/stealthaudit/pkg/orchestrator"
+import "github.com/Aymaancoderji/StealthAudit/pkg/orchestrator"
 
 // RunConfig is the fully resolved configuration for one audit run,
 // built from CLI flags and/or a config file.

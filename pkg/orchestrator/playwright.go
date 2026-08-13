@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"context"
 
-	pwrunner "github.com/stealthaudit/stealthaudit/runners/playwright"
+	pwrunner "github.com/Aymaancoderji/StealthAudit/runners/playwright"
 )
 
 // PlaywrightAdapter launches sessions by spawning a Node.js process running

@@ -6,7 +6,7 @@ package leakdetector
 import (
 	"context"
 
-	"github.com/stealthaudit/stealthaudit/pkg/orchestrator"
+	"github.com/Aymaancoderji/StealthAudit/pkg/orchestrator"
 )
 
 // LeakKind identifies the isolation boundary being tested.

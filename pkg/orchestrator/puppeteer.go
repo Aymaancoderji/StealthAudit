@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	pprunner "github.com/stealthaudit/stealthaudit/runners/puppeteer"
+	pprunner "github.com/Aymaancoderji/StealthAudit/runners/puppeteer"
 )
 
 // PuppeteerAdapter launches sessions by spawning a Node.js process running

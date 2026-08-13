@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	selrunner "github.com/stealthaudit/stealthaudit/runners/selenium"
+	selrunner "github.com/Aymaancoderji/StealthAudit/runners/selenium"
 )
 
 // SeleniumAdapter launches sessions by spawning a Python process running

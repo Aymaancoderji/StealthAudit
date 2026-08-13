@@ -1,4 +1,4 @@
-module github.com/stealthaudit/stealthaudit
+module github.com/Aymaancoderji/StealthAudit
 
 go 1.25.0
 

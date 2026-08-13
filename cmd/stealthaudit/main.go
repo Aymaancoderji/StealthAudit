@@ -10,12 +10,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/stealthaudit/stealthaudit/pkg/analyzer"
-	"github.com/stealthaudit/stealthaudit/pkg/collector"
-	"github.com/stealthaudit/stealthaudit/pkg/config"
-	"github.com/stealthaudit/stealthaudit/pkg/leakdetector"
-	"github.com/stealthaudit/stealthaudit/pkg/network"
-	"github.com/stealthaudit/stealthaudit/pkg/orchestrator"
+	"github.com/Aymaancoderji/StealthAudit/pkg/analyzer"
+	"github.com/Aymaancoderji/StealthAudit/pkg/collector"
+	"github.com/Aymaancoderji/StealthAudit/pkg/config"
+	"github.com/Aymaancoderji/StealthAudit/pkg/leakdetector"
+	"github.com/Aymaancoderji/StealthAudit/pkg/network"
+	"github.com/Aymaancoderji/StealthAudit/pkg/orchestrator"
 )
 
 // report is the JSON envelope for `run`'s output: the in-browser

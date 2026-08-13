@@ -5,7 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 
-	"github.com/stealthaudit/stealthaudit/pkg/orchestrator"
+	"github.com/Aymaancoderji/StealthAudit/pkg/orchestrator"
 )
 
 //go:embed audit.js
