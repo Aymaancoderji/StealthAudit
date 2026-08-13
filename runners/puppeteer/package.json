@@ -1,0 +1,12 @@
+{
+  "name": "stealthaudit-puppeteer-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node runner process controlled by the StealthAudit Go orchestrator via stdin/stdout JSON.",
+  "main": "session.js",
+  "dependencies": {
+    "puppeteer": "24.43.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

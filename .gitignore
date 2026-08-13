@@ -1,0 +1,13 @@
+/bin/
+/dist/
+*.exe
+node_modules/
+*.log
+.env
+.DS_Store
+
+# Downloaded browser/driver binaries (fetched via npm postinstall /
+# `npx playwright install` / `npx @puppeteer/browsers install` / the
+# standalone geckodriver download) — large, platform-specific, not source.
+runners/puppeteer/chromedriver/
+runners/selenium/bin/
