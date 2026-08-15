@@ -16,6 +16,7 @@ import (
 	"github.com/Aymaancoderji/StealthAudit/pkg/config"
 	"github.com/Aymaancoderji/StealthAudit/pkg/dashboard"
 	"github.com/Aymaancoderji/StealthAudit/pkg/leakdetector"
+	"github.com/Aymaancoderji/StealthAudit/pkg/mlmodel"
 	"github.com/Aymaancoderji/StealthAudit/pkg/network"
 	"github.com/Aymaancoderji/StealthAudit/pkg/orchestrator"
 	"github.com/Aymaancoderji/StealthAudit/pkg/report"
@@ -161,10 +162,14 @@ func runCollect(cfg config.RunConfig, timeout time.Duration) error {
 		fmt.Printf("  [%s] %s: %s\n", flag.Category, flag.Code, flag.Description)
 	}
 
+	mlResult := mlmodel.Classify(fp, netCapture)
+	fmt.Printf("ML automation probability: %.0f%% (%s)\n", mlResult.Probability*100, mlResult.Verdict)
+
 	rep := &report.Run{
 		Fingerprint: fp,
 		Network:     netCapture,
 		Analysis:    analysis,
+		ML:          mlResult,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 

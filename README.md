@@ -25,12 +25,14 @@ pkg/collector/         Fingerprint schema + in-browser audit script (audit.js) c
 pkg/network/           TLS (JA3/JA4) and HTTP/2 fingerprint capture via a local probe server
 pkg/leakdetector/       Cross-context/session isolation leak tests
 pkg/analyzer/           Stealth Score computation (rule-based scorer)
+pkg/mlmodel/            Logistic-regression classifier: P(automated) from fingerprint signals
 pkg/report/             JSON report envelopes + loading, shared by run/leaktest/compare/serve
 pkg/comparer/           Baseline-vs-target diffing for `compare`
 pkg/dashboard/          Self-contained HTML dashboard rendering (run + compare)
 pkg/config/             Run configuration types
 runners/                Node (Playwright/Puppeteer) and Python (Selenium) runner scripts,
                           spawned by the Go orchestrator and driven over stdin/stdout JSON-RPC
+tools/trainml/          Trains pkg/mlmodel's weights (`go run ./tools/trainml`)
 ```
 
 ## Requirements
@@ -111,7 +113,32 @@ POSTs the result back, and scores it — letting you see a genuine baseline
 fingerprint, or sanity-check the collector script itself, without needing
 a driver/runner installed. Visiting the printed TLS probe URL first (in a
 new tab, accepting the self-signed cert warning) also fills in the
-TLS/HTTP2 category before you load `/report`.
+TLS/HTTP2 category.
+
+It's built as a fingerprint.com-style live demo: returning visitors are
+recognized from stable fingerprint signals alone (canvas/audio hashes,
+WebGL renderer, fonts, screen/CPU — no cookies), with visit counts
+persisted to `~/.stealthaudit/visitors.json` across restarts. Every result
+also runs through `pkg/mlmodel`'s classifier, surfaced as an immediate
+banner at the top of the page ("ML model flagged this fingerprint as
+suspicious — 96%") with the top contributing signals, before you even see
+the rule-based breakdown below it.
+
+### ML scoring (`pkg/mlmodel`)
+
+Alongside the rule-based analyzer, every report also gets a logistic
+regression score: P(automated) computed from 13 fingerprint/network
+features, with per-feature contributions for explainability. It's a
+deliberately different technique from the rule engine — rules apply fixed
+thresholds, the model combines every signal into one weighted probability,
+so it can still flag a fingerprint that's individually patched around one
+or two rule checks (e.g. `navigator.webdriver` spoofed away) but still
+looks statistically off on everything else. There's no large labeled
+corpus of real fingerprints available to this project, so the weights
+(`pkg/mlmodel/model.go`) are fit against a synthetic dataset built from the
+same domain knowledge `pkg/analyzer/baseline.go` encodes as rules — see
+`tools/trainml/main.go` for the full methodology, and run
+`go run ./tools/trainml` to regenerate.
 
 ## Known gaps
 

@@ -10,6 +10,7 @@ import (
 	"github.com/Aymaancoderji/StealthAudit/pkg/analyzer"
 	"github.com/Aymaancoderji/StealthAudit/pkg/collector"
 	"github.com/Aymaancoderji/StealthAudit/pkg/leakdetector"
+	"github.com/Aymaancoderji/StealthAudit/pkg/mlmodel"
 	"github.com/Aymaancoderji/StealthAudit/pkg/network"
 )
 
@@ -21,6 +22,7 @@ type Run struct {
 	*collector.Fingerprint
 	Network     *network.Capture `json:"network,omitempty"`
 	Analysis    *analyzer.Report `json:"analysis,omitempty"`
+	ML          *mlmodel.Result  `json:"ml,omitempty"`
 	GeneratedAt string           `json:"generatedAt,omitempty"`
 }
 

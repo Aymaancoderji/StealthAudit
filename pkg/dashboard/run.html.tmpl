@@ -38,6 +38,12 @@
   code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; word-break: break-all; }
   details summary { cursor: pointer; color: #58a6ff; font-size: .9rem; }
   footer { text-align: center; color: #484f58; font-size: .8rem; margin-top: 2rem; }
+  .ml-banner {
+    display: flex; align-items: center; gap: 1rem; border-radius: 10px;
+    padding: 1rem 1.25rem; margin-bottom: 1.5rem; font-weight: 600;
+  }
+  .ml-banner .prob { font-size: 1.6rem; font-weight: 800; }
+  .ml-banner .sub { font-weight: 400; color: #8b949e; font-size: .85rem; }
 </style>
 </head>
 <body>
@@ -47,6 +53,16 @@
     {{if .UserAgent}}{{.UserAgent}}{{else}}(no user agent recorded){{end}}
     {{if .GeneratedAt}} &middot; generated {{.GeneratedAt}}{{end}}
   </div>
+
+  {{if .ML}}
+  <div class="ml-banner" style="background: {{if eq .ML.Verdict "likely_automated"}}#f8514922{{else if eq .ML.Verdict "likely_genuine"}}#3fb95022{{else}}#d2992222{{end}}; color: {{if eq .ML.Verdict "likely_automated"}}#f85149{{else if eq .ML.Verdict "likely_genuine"}}#3fb950{{else}}#d29922{{end}}">
+    <span class="prob">{{round1 (mulHundred .ML.Probability)}}%</span>
+    <span>
+      {{if eq .ML.Verdict "likely_automated"}}ML model flags this as likely automated{{else if eq .ML.Verdict "likely_genuine"}}ML model reads this as a genuine browser{{else}}ML model is uncertain{{end}}
+      <div class="sub">logistic regression over {{len .ML.Contributions}} fingerprint signals &middot; top factor: {{(index .ML.Contributions 0).Feature}}</div>
+    </span>
+  </div>
+  {{end}}
 
   {{if .Analysis}}
   <div class="card">

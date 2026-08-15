@@ -116,6 +116,27 @@ const indexHTML = `<!doctype html>
     overflow: auto; font-size: .78rem; max-height: 420px;
   }
   #errorBox { display: none; background: var(--red-soft); color: var(--red); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+
+  .ml-flag {
+    display: flex; align-items: center; gap: 1.1rem; border-radius: 14px;
+    padding: 1.1rem 1.4rem; margin-bottom: 1.5rem; animation: flagpop .3s ease;
+    border: 1px solid transparent;
+  }
+  .ml-flag.automated { background: var(--red-soft); border-color: #f8b4b4; }
+  .ml-flag.genuine { background: var(--green-soft); border-color: #a7e3bb; }
+  .ml-flag.uncertain { background: var(--amber-soft); border-color: #f3d49a; }
+  .ml-flag .ml-icon { font-size: 1.8rem; line-height: 1; }
+  .ml-flag .ml-prob { font-size: 1.7rem; font-weight: 800; }
+  .ml-flag.automated .ml-prob, .ml-flag.automated .ml-title { color: var(--red); }
+  .ml-flag.genuine .ml-prob, .ml-flag.genuine .ml-title { color: var(--green); }
+  .ml-flag.uncertain .ml-prob, .ml-flag.uncertain .ml-title { color: var(--amber); }
+  .ml-flag .ml-title { font-weight: 700; font-size: 1rem; }
+  .ml-flag .ml-sub { color: var(--muted); font-size: .82rem; margin-top: .15rem; }
+  .ml-flag .ml-badge {
+    margin-left: auto; font-size: .72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; background: rgba(0,0,0,.06); padding: .3rem .6rem; border-radius: 999px;
+  }
+  @keyframes flagpop { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
 </style>
 </head>
 <body>
@@ -170,6 +191,27 @@ function categoryCard(title, score, itemsHTML) {
   '</div>';
 }
 
+function mlFlagBanner(ml) {
+  if (!ml) return '';
+  const pct = Math.round(ml.probability * 100);
+  const cls = ml.verdict === 'likely_automated' ? 'automated' : (ml.verdict === 'likely_genuine' ? 'genuine' : 'uncertain');
+  const icon = cls === 'automated' ? '&#128680;' : (cls === 'genuine' ? '&#9989;' : '&#8265;');
+  const title = cls === 'automated'
+    ? 'ML model flagged this fingerprint as suspicious'
+    : (cls === 'genuine' ? 'ML model reads this as a genuine browser' : 'ML model is uncertain about this fingerprint');
+  const top = (ml.contributions || []).slice(0, 3)
+    .filter(c => Math.abs(c.impact) > 0.01)
+    .map(c => c.feature.replace(/_/g, ' '))
+    .join(', ');
+  return '<div class="ml-flag ' + cls + '">' +
+    '<span class="ml-icon">' + icon + '</span>' +
+    '<div><div class="ml-title">' + title + '</div>' +
+    '<div class="ml-sub">' + (top ? 'Driven mainly by: ' + esc(top) : 'No strong signals either way') + '</div></div>' +
+    '<span class="ml-prob">' + pct + '%</span>' +
+    '<span class="ml-badge">' + cls.replace('_', ' ') + '</span>' +
+  '</div>';
+}
+
 function render(data) {
   const r = data.report, v = data.visitor, a = r.analysis || {};
   const cat = a.categoryScores || {};
@@ -185,7 +227,9 @@ function render(data) {
     ? "First time here &mdash; nice to meet you."
     : "Welcome back! Recognized from " + v.count + " previous visit" + (v.count === 1 ? '' : 's') + " &mdash; no cookies involved.";
 
-  let html = '<div class="hero">' +
+  let html = mlFlagBanner(r.ml);
+
+  html += '<div class="hero">' +
     gauge(a.stealthScore || 0) +
     '<div class="hero-main">' +
       '<p class="visitor-line">You\'ve visited ' + v.count + ' time' + (v.count === 1 ? '' : 's') + '</p>' +

@@ -28,7 +28,8 @@ var funcMap = template.FuncMap{
 		}
 		return trimFloat(f)
 	},
-	"round1": trimFloat,
+	"round1":     trimFloat,
+	"mulHundred": func(f float64) float64 { return f * 100 },
 }
 
 var runTmpl = template.Must(template.New("run").Funcs(funcMap).Parse(runTmplSrc))

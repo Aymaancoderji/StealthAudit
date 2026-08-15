@@ -16,6 +16,7 @@ import (
 
 	"github.com/Aymaancoderji/StealthAudit/pkg/analyzer"
 	"github.com/Aymaancoderji/StealthAudit/pkg/collector"
+	"github.com/Aymaancoderji/StealthAudit/pkg/mlmodel"
 	"github.com/Aymaancoderji/StealthAudit/pkg/network"
 	"github.com/Aymaancoderji/StealthAudit/pkg/report"
 )
@@ -201,6 +202,7 @@ func runServe(port int) error {
 			Fingerprint: fp,
 			Network:     netCapture,
 			Analysis:    analysis,
+			ML:          mlmodel.Classify(fp, netCapture),
 			GeneratedAt: collectedAt.UTC().Format(time.RFC3339),
 		}
 

@@ -35,6 +35,13 @@ func isSoftwareRenderer(renderer string) bool {
 	return false
 }
 
+// IsSoftwareRenderer reports whether a WebGL unmasked-renderer string
+// indicates a software (non-GPU) rasterizer. Exported so pkg/mlmodel's
+// feature extraction can reuse the same signal instead of duplicating it.
+func IsSoftwareRenderer(renderer string) bool {
+	return isSoftwareRenderer(renderer)
+}
+
 // browserFamily is which rendering engine a User-Agent claims to be.
 type browserFamily string
 
