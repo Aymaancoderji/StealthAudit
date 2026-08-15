@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StealthAudit Compare</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.5rem 4rem;
+    background: #0d1117; color: #c9d1d9;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 950px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; color: #f0f6fc; }
+  .sub { color: #8b949e; font-size: .9rem; margin-bottom: 2rem; }
+  .card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .card h2 { margin: 0 0 1rem; font-size: 1rem; color: #f0f6fc; text-transform: uppercase; letter-spacing: .04em; }
+  .score-compare { display: flex; align-items: center; gap: 2.5rem; flex-wrap: wrap; }
+  .score-col { text-align: center; }
+  .score-col .label { color: #8b949e; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; margin-bottom: .25rem; }
+  .score-col .val { font-size: 2.5rem; font-weight: 700; }
+  .delta { font-size: 1.1rem; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #21262d; font-size: .88rem; vertical-align: top; }
+  th { color: #8b949e; font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+  tr:last-child td { border-bottom: none; }
+  tr.changed td { background: #3d2a0022; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; word-break: break-all; }
+  .flag-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; color: #f0f6fc; }
+  .empty { color: #8b949e; font-style: italic; }
+  .tag { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: .75rem; font-weight: 600; }
+  .tag-added { background: #f8514922; color: #f85149; }
+  .tag-removed { background: #3fb95022; color: #3fb950; }
+  footer { text-align: center; color: #484f58; font-size: .8rem; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>StealthAudit Compare</h1>
+  <div class="sub">baseline vs. target &middot; higher stealth score = harder to detect as automated</div>
+
+  <div class="card">
+    <h2>Stealth Score</h2>
+    <div class="score-compare">
+      <div class="score-col">
+        <div class="label">Baseline</div>
+        <div class="val" style="color: {{scoreColor .BaselineScore}}">{{round1 .BaselineScore}}</div>
+      </div>
+      <div class="score-col">
+        <div class="label">Target</div>
+        <div class="val" style="color: {{scoreColor .TargetScore}}">{{round1 .TargetScore}}</div>
+      </div>
+      <div class="score-col">
+        <div class="label">Delta</div>
+        <div class="delta" style="color: {{if gt .ScoreDelta 0.0}}#3fb950{{else if lt .ScoreDelta 0.0}}#f85149{{else}}#8b949e{{end}}">{{signed .ScoreDelta}}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Category Scores</h2>
+    <table>
+      <tr><th>Category</th><th>Baseline</th><th>Target</th><th>Delta</th></tr>
+      {{range .Categories}}
+      <tr>
+        <td>{{.Category}}</td>
+        <td style="color: {{scoreColor .Baseline}}">{{round1 .Baseline}}</td>
+        <td style="color: {{scoreColor .Target}}">{{round1 .Target}}</td>
+        <td style="color: {{if gt .Delta 0.0}}#3fb950{{else if lt .Delta 0.0}}#f85149{{else}}#8b949e{{end}}">{{signed .Delta}}</td>
+      </tr>
+      {{end}}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Flags Only in Target (new / regressed) — {{len .FlagsAdded}}</h2>
+    {{if .FlagsAdded}}
+    <table>
+      <tr><th>Sev</th><th>Category</th><th>Code</th><th>Description</th></tr>
+      {{range .FlagsAdded}}
+      <tr><td><span class="tag tag-added">{{.Severity}}</span></td><td>{{.Category}}</td><td class="flag-code">{{.Code}}</td><td>{{.Description}}</td></tr>
+      {{end}}
+    </table>
+    {{else}}<p class="empty">None — target raised no flags the baseline didn't already have.</p>{{end}}
+  </div>
+
+  <div class="card">
+    <h2>Flags Only in Baseline (fixed / improved) — {{len .FlagsRemoved}}</h2>
+    {{if .FlagsRemoved}}
+    <table>
+      <tr><th>Sev</th><th>Category</th><th>Code</th><th>Description</th></tr>
+      {{range .FlagsRemoved}}
+      <tr><td><span class="tag tag-removed">{{.Severity}}</span></td><td>{{.Category}}</td><td class="flag-code">{{.Code}}</td><td>{{.Description}}</td></tr>
+      {{end}}
+    </table>
+    {{else}}<p class="empty">None — target didn't resolve any baseline flags.</p>{{end}}
+  </div>
+
+  <div class="card">
+    <h2>Field-Level Diff</h2>
+    <table>
+      <tr><th>Field</th><th>Baseline</th><th>Target</th></tr>
+      {{range .Fields}}
+      <tr class="{{if .Changed}}changed{{end}}">
+        <td>{{.Field}}</td>
+        <td class="mono">{{if .Baseline}}{{.Baseline}}{{else}}—{{end}}</td>
+        <td class="mono">{{if .Target}}{{.Target}}{{else}}—{{end}}</td>
+      </tr>
+      {{end}}
+    </table>
+  </div>
+
+  <footer>StealthAudit compare</footer>
+</main>
+</body>
+</html>

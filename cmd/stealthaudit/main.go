@@ -12,24 +12,14 @@ import (
 
 	"github.com/Aymaancoderji/StealthAudit/pkg/analyzer"
 	"github.com/Aymaancoderji/StealthAudit/pkg/collector"
+	"github.com/Aymaancoderji/StealthAudit/pkg/comparer"
 	"github.com/Aymaancoderji/StealthAudit/pkg/config"
+	"github.com/Aymaancoderji/StealthAudit/pkg/dashboard"
 	"github.com/Aymaancoderji/StealthAudit/pkg/leakdetector"
 	"github.com/Aymaancoderji/StealthAudit/pkg/network"
 	"github.com/Aymaancoderji/StealthAudit/pkg/orchestrator"
+	"github.com/Aymaancoderji/StealthAudit/pkg/report"
 )
-
-// report is the JSON envelope for `run`'s output: the in-browser
-// fingerprint, the network-level (TLS/HTTP2) capture from probing
-// pkg/network's local server, and the resulting Stealth Score/flags.
-// Embedding *collector.Fingerprint promotes its fields to the top level so
-// the schema stays flat. SessionIsolation always scores 100 here since
-// `run` collects from a single session — cross-session leak checks are
-// `leaktest`'s job, not part of this report's Analysis.
-type report struct {
-	*collector.Fingerprint
-	Network  *network.Capture `json:"network,omitempty"`
-	Analysis *analyzer.Report `json:"analysis,omitempty"`
-}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -44,6 +34,8 @@ func main() {
 		cmdLeakTest(os.Args[2:])
 	case "compare":
 		cmdCompare(os.Args[2:])
+	case "serve":
+		cmdServe(os.Args[2:])
 	case "list-drivers":
 		cmdListDrivers()
 	case "-h", "--help", "help":
@@ -61,10 +53,11 @@ func printUsage() {
 Usage:
   stealthaudit run [flags]
   stealthaudit leaktest [flags]
-  stealthaudit compare --baseline=<file> --target=<file>
+  stealthaudit compare --baseline=<file> --target=<file> [--out-html=<file>]
+  stealthaudit serve [--port=<n>]
   stealthaudit list-drivers
 
-Run "stealthaudit run -h" or "stealthaudit leaktest -h" for flag details.
+Run "stealthaudit <command> -h" for flag details.
 `)
 }
 
@@ -168,7 +161,12 @@ func runCollect(cfg config.RunConfig, timeout time.Duration) error {
 		fmt.Printf("  [%s] %s: %s\n", flag.Category, flag.Code, flag.Description)
 	}
 
-	rep := report{Fingerprint: fp, Network: netCapture, Analysis: analysis}
+	rep := &report.Run{
+		Fingerprint: fp,
+		Network:     netCapture,
+		Analysis:    analysis,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+	}
 
 	out, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
@@ -182,6 +180,17 @@ func runCollect(cfg config.RunConfig, timeout time.Duration) error {
 		fmt.Printf("wrote fingerprint report to %s\n", cfg.OutputJSON)
 	} else {
 		fmt.Println(string(out))
+	}
+
+	if cfg.OutputHTML != "" {
+		html, err := dashboard.RenderRun(rep)
+		if err != nil {
+			return fmt.Errorf("rendering dashboard: %w", err)
+		}
+		if err := os.WriteFile(cfg.OutputHTML, html, 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", cfg.OutputHTML, err)
+		}
+		fmt.Printf("wrote HTML dashboard to %s\n", cfg.OutputHTML)
 	}
 
 	return nil
@@ -279,10 +288,7 @@ func runLeakTest(cfg config.RunConfig, timeout time.Duration) error {
 	}
 	fmt.Printf("session isolation score: %.1f/100\n", analysis.CategoryScores[analyzer.CategorySessionIsolation])
 
-	leakReport := struct {
-		Findings []leakdetector.Finding `json:"findings"`
-		Analysis *analyzer.Report       `json:"analysis"`
-	}{Findings: findings, Analysis: analysis}
+	leakReport := report.Leak{Findings: findings, Analysis: analysis}
 
 	out, err := json.MarshalIndent(leakReport, "", "  ")
 	if err != nil {
@@ -310,8 +316,8 @@ func detailSuffix(detail string) string {
 
 func cmdCompare(args []string) {
 	fs := flag.NewFlagSet("compare", flag.ExitOnError)
-	baseline := fs.String("baseline", "", "path to baseline JSON report")
-	target := fs.String("target", "", "path to target JSON report")
+	baseline := fs.String("baseline", "", "path to baseline JSON report (from `run --out-json`)")
+	target := fs.String("target", "", "path to target JSON report (from `run --out-json`)")
 	outHTML := fs.String("out-html", "", "path to write diff HTML dashboard")
 	fs.Parse(args)
 
@@ -320,15 +326,55 @@ func cmdCompare(args []string) {
 		os.Exit(1)
 	}
 
-	cfg := config.CompareConfig{
-		BaselinePath: *baseline,
-		TargetPath:   *target,
-		OutputHTML:   *outHTML,
+	if err := runCompare(*baseline, *target, *outHTML); err != nil {
+		fmt.Fprintf(os.Stderr, "compare failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runCompare(baselinePath, targetPath, outHTML string) error {
+	baseline, err := report.LoadRun(baselinePath)
+	if err != nil {
+		return fmt.Errorf("loading baseline: %w", err)
+	}
+	target, err := report.LoadRun(targetPath)
+	if err != nil {
+		return fmt.Errorf("loading target: %w", err)
 	}
 
-	// TODO(phase6/7): load two collector.Fingerprint/analyzer.Report JSON
-	// files and render a diff.
-	fmt.Printf("stealthaudit compare: not yet implemented (Phase 6/7). Parsed config: %+v\n", cfg)
+	diff := comparer.Compare(baseline, target)
+
+	fmt.Printf("baseline stealth score: %.1f/100\n", diff.BaselineScore)
+	fmt.Printf("target stealth score:   %.1f/100\n", diff.TargetScore)
+	fmt.Printf("delta: %+.1f\n", diff.ScoreDelta)
+	for _, c := range diff.Categories {
+		fmt.Printf("  %-22s baseline=%.1f target=%.1f delta=%+.1f\n", c.Category, c.Baseline, c.Target, c.Delta)
+	}
+	if len(diff.FlagsAdded) > 0 {
+		fmt.Println("flags only in target (new/regressed):")
+		for _, f := range diff.FlagsAdded {
+			fmt.Printf("  [%s] %s: %s\n", f.Category, f.Code, f.Description)
+		}
+	}
+	if len(diff.FlagsRemoved) > 0 {
+		fmt.Println("flags only in baseline (fixed/improved):")
+		for _, f := range diff.FlagsRemoved {
+			fmt.Printf("  [%s] %s: %s\n", f.Category, f.Code, f.Description)
+		}
+	}
+
+	if outHTML != "" {
+		html, err := dashboard.RenderCompare(diff)
+		if err != nil {
+			return fmt.Errorf("rendering dashboard: %w", err)
+		}
+		if err := os.WriteFile(outHTML, html, 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", outHTML, err)
+		}
+		fmt.Printf("wrote diff dashboard to %s\n", outHTML)
+	}
+
+	return nil
 }
 
 func cmdListDrivers() {

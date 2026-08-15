@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StealthAudit Report</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.5rem 4rem;
+    background: #0d1117; color: #c9d1d9;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; color: #f0f6fc; }
+  .sub { color: #8b949e; font-size: .9rem; margin-bottom: 2rem; word-break: break-all; }
+  .card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .card h2 { margin: 0 0 1rem; font-size: 1rem; color: #f0f6fc; text-transform: uppercase; letter-spacing: .04em; }
+  .score-row { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.5rem; }
+  .score-big { font-size: 3rem; font-weight: 700; }
+  .score-big .of100 { font-size: 1.25rem; color: #8b949e; font-weight: 400; }
+  .bars { display: grid; gap: .75rem; }
+  .bar-row { display: grid; grid-template-columns: 200px 1fr 3.5rem; align-items: center; gap: .75rem; }
+  .bar-label { color: #8b949e; font-size: .85rem; }
+  .bar-track { background: #21262d; border-radius: 6px; height: 10px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 6px; }
+  .bar-val { text-align: right; font-variant-numeric: tabular-nums; font-size: .85rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #21262d; font-size: .88rem; vertical-align: top; }
+  th { color: #8b949e; font-weight: 500; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+  tr:last-child td { border-bottom: none; }
+  .sev { display: inline-block; min-width: 1.4rem; text-align: center; border-radius: 4px; padding: 1px 6px; font-weight: 700; font-size: .78rem; }
+  .flag-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; color: #f0f6fc; }
+  .empty { color: #8b949e; font-style: italic; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; word-break: break-all; }
+  details summary { cursor: pointer; color: #58a6ff; font-size: .9rem; }
+  footer { text-align: center; color: #484f58; font-size: .8rem; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>StealthAudit Report</h1>
+  <div class="sub">
+    {{if .UserAgent}}{{.UserAgent}}{{else}}(no user agent recorded){{end}}
+    {{if .GeneratedAt}} &middot; generated {{.GeneratedAt}}{{end}}
+  </div>
+
+  {{if .Analysis}}
+  <div class="card">
+    <h2>Stealth Score</h2>
+    <div class="score-row">
+      <div class="score-big" style="color: {{scoreColor .Analysis.StealthScore}}">{{round1 .Analysis.StealthScore}}<span class="of100">/100</span></div>
+    </div>
+    <div class="bars">
+      {{range $cat, $score := .Analysis.CategoryScores}}
+      <div class="bar-row">
+        <div class="bar-label">{{$cat}}</div>
+        <div class="bar-track"><div class="bar-fill" style="width: {{round1 $score}}%; background: {{scoreColor $score}}"></div></div>
+        <div class="bar-val">{{round1 $score}}</div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Flags ({{len .Analysis.Flags}})</h2>
+    {{if .Analysis.Flags}}
+    <table>
+      <tr><th>Sev</th><th>Category</th><th>Code</th><th>Description</th></tr>
+      {{range .Analysis.Flags}}
+      <tr>
+        <td><span class="sev" style="background: {{sevColor .Severity}}22; color: {{sevColor .Severity}}">{{.Severity}}</span></td>
+        <td>{{.Category}}</td>
+        <td class="flag-code">{{.Code}}</td>
+        <td>{{.Description}}</td>
+      </tr>
+      {{end}}
+    </table>
+    {{else}}
+    <p class="empty">No flags raised — nothing in this fingerprint looked anomalous.</p>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="card"><p class="empty">No analysis attached to this report.</p></div>
+  {{end}}
+
+  {{if .Network}}
+  <div class="card">
+    <h2>Network Fingerprint</h2>
+    <table>
+      {{if .Network.TLS}}
+      <tr><th>JA3</th><td class="mono">{{.Network.TLS.JA3}}</td></tr>
+      <tr><th>JA4</th><td class="mono">{{.Network.TLS.JA4}}</td></tr>
+      {{end}}
+      {{if .Network.HTTP2}}
+      <tr><th>HTTP/2 pseudo-headers</th><td class="mono">{{range .Network.HTTP2.PseudoHeaders}}{{.}} {{end}}</td></tr>
+      <tr><th>HTTP/2 header order</th><td class="mono">{{range .Network.HTTP2.HeaderOrder}}{{.}} {{end}}</td></tr>
+      {{end}}
+    </table>
+  </div>
+  {{end}}
+
+  <div class="card">
+    <h2>Raw Fingerprint</h2>
+    <details>
+      <summary>Show full collected data</summary>
+      <table style="margin-top: 1rem">
+        {{if .WebGL}}
+        <tr><th>WebGL vendor</th><td>{{.WebGL.Vendor}}</td></tr>
+        <tr><th>WebGL renderer</th><td>{{.WebGL.Renderer}}</td></tr>
+        <tr><th>WebGL unmasked vendor</th><td>{{.WebGL.UnmaskedVendor}}</td></tr>
+        <tr><th>WebGL unmasked renderer</th><td>{{.WebGL.UnmaskedRenderer}}</td></tr>
+        {{end}}
+        {{if .Canvas}}<tr><th>Canvas hash</th><td class="mono">{{.Canvas.Hash}}</td></tr>{{end}}
+        {{if .Audio}}<tr><th>Audio hash</th><td class="mono">{{.Audio.Hash}}</td></tr>{{end}}
+        {{if .Runtime}}
+        <tr><th>navigator.webdriver</th><td>{{.Runtime.WebdriverFlag}}</td></tr>
+        <tr><th>Function.toString OK</th><td>{{.Runtime.FunctionToStringOK}}</td></tr>
+        <tr><th>window.chrome.runtime</th><td>{{.Runtime.HasChromeRuntime}}</td></tr>
+        <tr><th>Permissions API anomaly</th><td>{{.Runtime.PermissionsAnomaly}}</td></tr>
+        <tr><th>Worker support</th><td>{{.Runtime.WorkerSupport}}</td></tr>
+        {{end}}
+        {{if .Device}}
+        <tr><th>Screen</th><td>{{.Device.ScreenWidth}}x{{.Device.ScreenHeight}} @ {{.Device.ColorDepth}}bit</td></tr>
+        <tr><th>Device memory</th><td>{{.Device.DeviceMemory}} GB</td></tr>
+        <tr><th>Hardware concurrency</th><td>{{.Device.HardwareConcurrency}}</td></tr>
+        <tr><th>Touch points</th><td>{{.Device.TouchPoints}}</td></tr>
+        <tr><th>Fonts ({{len .Device.Fonts}})</th><td>{{range .Device.Fonts}}{{.}} {{end}}</td></tr>
+        {{end}}
+      </table>
+    </details>
+  </div>
+
+  <footer>StealthAudit &middot; schema {{.SchemaVersion}}</footer>
+</main>
+</body>
+</html>

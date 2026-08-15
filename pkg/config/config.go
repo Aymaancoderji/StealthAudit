@@ -17,10 +17,3 @@ type RunConfig struct {
 	OutputJSON string // path to write the JSON report; empty = skip
 	OutputHTML string // path to write the HTML dashboard; empty = skip
 }
-
-// CompareConfig is the resolved configuration for `stealthaudit compare`.
-type CompareConfig struct {
-	BaselinePath string
-	TargetPath   string
-	OutputHTML   string
-}

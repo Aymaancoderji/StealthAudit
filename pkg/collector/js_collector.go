@@ -11,6 +11,13 @@ import (
 //go:embed audit.js
 var auditScript string
 
+// AuditScript returns the raw audit.js source. Exposed for callers that
+// need to run it directly in a real (non-orchestrated) browser, such as
+// the `serve` command's live test page, instead of through a Session.
+func AuditScript() string {
+	return auditScript
+}
+
 // JSCollector gathers a Fingerprint by evaluating the standardized audit
 // script (audit.js) in the target page.
 type JSCollector struct{}
