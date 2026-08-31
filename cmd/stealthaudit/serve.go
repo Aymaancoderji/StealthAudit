@@ -37,11 +37,16 @@ type serveState struct {
 	collectedAt time.Time
 }
 
+// maxVisitHistory caps how many past-visit timestamps are kept per visitor,
+// so the store doesn't grow unbounded for a visitor that reloads often.
+const maxVisitHistory = 25
+
 // visitorRecord is what's persisted per stable visitor ID.
 type visitorRecord struct {
-	Count     int       `json:"count"`
-	FirstSeen time.Time `json:"firstSeen"`
-	LastSeen  time.Time `json:"lastSeen"`
+	Count     int         `json:"count"`
+	FirstSeen time.Time   `json:"firstSeen"`
+	LastSeen  time.Time   `json:"lastSeen"`
+	Visits    []time.Time `json:"visits,omitempty"`
 }
 
 // visitorStore recognizes returning visitors purely from stable fingerprint
@@ -83,6 +88,10 @@ func (s *visitorStore) touch(visitorID string) (rec visitorRecord, isNew bool) {
 	}
 	r.Count++
 	r.LastSeen = now
+	r.Visits = append(r.Visits, now)
+	if len(r.Visits) > maxVisitHistory {
+		r.Visits = r.Visits[len(r.Visits)-maxVisitHistory:]
+	}
 	s.save()
 	return *r, !ok
 }
@@ -206,6 +215,11 @@ func runServe(port int) error {
 			GeneratedAt: collectedAt.UTC().Format(time.RFC3339),
 		}
 
+		visits := make([]string, 0, len(rec.Visits))
+		for _, t := range rec.Visits {
+			visits = append(visits, t.UTC().Format(time.RFC3339))
+		}
+
 		return map[string]any{
 			"report": rep,
 			"visitor": map[string]any{
@@ -215,6 +229,7 @@ func runServe(port int) error {
 				"isNew":     isNew,
 				"firstSeen": rec.FirstSeen.UTC().Format(time.RFC3339),
 				"lastSeen":  rec.LastSeen.UTC().Format(time.RFC3339),
+				"visits":    visits,
 			},
 		}, nil
 	}

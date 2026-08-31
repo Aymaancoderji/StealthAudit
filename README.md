@@ -117,8 +117,10 @@ TLS/HTTP2 category.
 
 It's built as a fingerprint.com-style live demo: returning visitors are
 recognized from stable fingerprint signals alone (canvas/audio hashes,
-WebGL renderer, fonts, screen/CPU — no cookies), with visit counts
-persisted to `~/.stealthaudit/visitors.json` across restarts. Every result
+WebGL renderer, fonts, screen/CPU — no cookies), with visit counts and a
+timestamped history of the last 25 visits persisted to
+`~/.stealthaudit/visitors.json` across restarts and rendered as a visit
+timeline on the page. Every result
 also runs through `pkg/mlmodel`'s classifier, surfaced as an immediate
 banner at the top of the page ("ML model flagged this fingerprint as
 suspicious — 96%") with the top contributing signals, before you even see

@@ -137,6 +137,13 @@ const indexHTML = `<!doctype html>
     letter-spacing: .04em; background: rgba(0,0,0,.06); padding: .3rem .6rem; border-radius: 999px;
   }
   @keyframes flagpop { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+
+  .history-wrap { margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+  .history-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .5rem; }
+  .history-bars { display: flex; align-items: flex-end; gap: 3px; height: 34px; }
+  .history-bars .bar { flex: 1 1 auto; max-width: 10px; height: 26px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: .35; }
+  .history-bars .bar.latest { opacity: 1; }
+  .history-bars .bar:hover { opacity: .8; }
 </style>
 </head>
 <body>
@@ -212,6 +219,19 @@ function mlFlagBanner(ml) {
   '</div>';
 }
 
+function visitHistory(visits) {
+  if (!visits || visits.length < 2) return '';
+  const bars = visits.map((iso, i) => {
+    const isLatest = i === visits.length - 1;
+    const title = fmtDate(iso);
+    return '<div class="bar' + (isLatest ? ' latest' : '') + '" title="' + esc(title) + '"></div>';
+  }).join('');
+  return '<div class="history-wrap">' +
+    '<div class="history-label">Visit history (' + visits.length + (visits.length >= 25 ? '+' : '') + ' most recent)</div>' +
+    '<div class="history-bars">' + bars + '</div>' +
+  '</div>';
+}
+
 function render(data) {
   const r = data.report, v = data.visitor, a = r.analysis || {};
   const cat = a.categoryScores || {};
@@ -225,7 +245,8 @@ function render(data) {
 
   const visitorLine = v.isNew
     ? "First time here &mdash; nice to meet you."
-    : "Welcome back! Recognized from " + v.count + " previous visit" + (v.count === 1 ? '' : 's') + " &mdash; no cookies involved.";
+    : "Welcome back! Recognized from " + v.count + " previous visit" + (v.count === 1 ? '' : 's') +
+      " &mdash; no cookies involved. Last time was " + fmtDate(v.lastSeen) + ".";
 
   let html = mlFlagBanner(r.ml);
 
@@ -239,6 +260,7 @@ function render(data) {
         '<span class="pill neutral">Visitor ID <code>' + v.shortId + '</code></span>' +
         '<span class="pill neutral">First seen ' + fmtDate(v.firstSeen) + '</span>' +
       '</div>' +
+      visitHistory(v.visits) +
     '</div>' +
   '</div>';
 
@@ -259,7 +281,10 @@ function render(data) {
     check(!!(fp.canvas && fp.canvas.hash), 'Canvas fingerprint produced') +
     check(!!(fp.audio && fp.audio.hash), 'Audio fingerprint produced') +
     check(dev.hardwareConcurrency > 1, 'CPU cores', String(dev.hardwareConcurrency ?? '?')) +
-    check((dev.fonts || []).length >= 3, 'System fonts detected', String((dev.fonts || []).length)));
+    check((dev.fonts || []).length >= 3, 'System fonts detected', String((dev.fonts || []).length)) +
+    check(dev.screenWidth > 0 && dev.screenHeight > 0, 'Screen resolution', (dev.screenWidth ?? '?') + '&times;' + (dev.screenHeight ?? '?')) +
+    check(dev.colorDepth >= 24, 'Color depth', dev.colorDepth ? dev.colorDepth + '-bit' : null) +
+    check(dev.deviceMemory > 0, 'Device memory', dev.deviceMemory ? dev.deviceMemory + ' GB' : 'unavailable'));
 
   if (r.network) {
     const tls = r.network.tls || {}, h2 = r.network.http2 || {};
