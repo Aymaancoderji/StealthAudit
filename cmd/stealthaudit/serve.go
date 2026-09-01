@@ -41,6 +41,10 @@ type serveState struct {
 // so the store doesn't grow unbounded for a visitor that reloads often.
 const maxVisitHistory = 25
 
+// maxCollectBodyBytes bounds how large a /api/collect request body can be,
+// since it's decoded straight into memory as JSON.
+const maxCollectBodyBytes = 1 << 20 // 1 MiB
+
 // visitorRecord is what's persisted per stable visitor ID.
 type visitorRecord struct {
 	Count     int         `json:"count"`
@@ -109,19 +113,38 @@ func (s *visitorStore) peek(visitorID string) (rec visitorRecord, found bool) {
 	return *r, true
 }
 
-// save writes the store to disk. Caller must hold s.mu.
+// save writes the store to disk. Caller must hold s.mu. It writes to a
+// temp file and renames into place so a crash or power loss mid-write
+// can't leave visitors.json truncated or corrupted.
 func (s *visitorStore) save() {
 	if s.path == "" {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
 	data, err := json.MarshalIndent(s.records, "", "  ")
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(s.path, data, 0o644)
+	tmp, err := os.CreateTemp(dir, ".visitors-*.json.tmp")
+	if err != nil {
+		return
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return
+	}
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		os.Remove(tmpPath)
+	}
 }
 
 // computeVisitorID derives a stable identifier from fingerprint signals
@@ -239,6 +262,7 @@ func runServe(port int) error {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxCollectBodyBytes)
 		var fp collector.Fingerprint
 		if err := json.NewDecoder(r.Body).Decode(&fp); err != nil {
 			http.Error(w, fmt.Sprintf("decoding fingerprint: %v", err), http.StatusBadRequest)
@@ -282,5 +306,14 @@ func runServe(port int) error {
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	fmt.Printf("stealthaudit serve: open http://%s/ in a real browser to test its fingerprint\n", addr)
 	fmt.Printf("  (TLS/HTTP2 probe listening separately at %s)\n", probeURL)
-	return http.ListenAndServe(addr, mux)
+
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	return srv.ListenAndServe()
 }
