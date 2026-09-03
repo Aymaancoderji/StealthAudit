@@ -1,6 +1,9 @@
 package analyzer
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // RuleScorer is the default Scorer: a fixed set of heuristic checks against
 // the baseline knowledge in baseline.go. Each triggered check produces a
@@ -59,6 +62,28 @@ func (RuleScorer) Score(in Input) (*Report, error) {
 		if !rt.WorkerSupport {
 			add(CategoryJSRuntimeIntegrity, "worker_unsupported", 2,
 				"Web Worker support is unexpectedly unavailable")
+		}
+
+		if len(rt.AutomationArtifacts) > 0 {
+			add(CategoryJSRuntimeIntegrity, "automation_artifacts_detected", 5,
+				"WebDriver/automation-framework artifacts found on window/document (%s), an unambiguous signal of a controlled session",
+				strings.Join(rt.AutomationArtifacts, ", "))
+		}
+		if rt.WebdriverDescriptorAnomaly {
+			add(CategoryJSRuntimeIntegrity, "webdriver_descriptor_anomaly", 4,
+				"navigator.webdriver's property descriptor doesn't match a native browser implementation, indicating it was patched or deleted to hide automation")
+		}
+		if rt.CDPRuntimeDomainSuspected {
+			add(CategoryJSRuntimeIntegrity, "cdp_runtime_domain_suspected", 3,
+				"a getter on an object logged via console.debug fired without being read in-page, consistent with the Chrome DevTools Protocol Runtime domain being enabled (used by Puppeteer/Playwright by default) to generate console object previews")
+		}
+		if rt.HasChromeRuntime && family == familyChromium && (!rt.ChromeLoadTimesPresent || !rt.ChromeCsiPresent) {
+			add(CategoryJSRuntimeIntegrity, "chrome_object_shape_incomplete", 3,
+				"window.chrome is present but missing loadTimes/csi, consistent with a stealth patch reconstructing a partial window.chrome object rather than a genuine Chrome runtime")
+		}
+		if family == familyChromium && !rt.HasChromeRuntime {
+			add(CategoryJSRuntimeIntegrity, "chrome_object_missing", 3,
+				"User-Agent claims a Chromium-based browser but window.chrome.runtime is absent, as commonly seen in headless/automated Chrome without the window.chrome shim")
 		}
 	}
 

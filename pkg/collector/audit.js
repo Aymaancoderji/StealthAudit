@@ -105,6 +105,98 @@
     }
   }
 
+  // scanAutomationArtifacts looks for global properties that WebDriver
+  // implementations (ChromeDriver, Selenium, old PhantomJS, and various
+  // automation shims) leave behind on window/document. Finding any of
+  // these is an unambiguous automation signal — real browsers never
+  // define them.
+  function scanAutomationArtifacts() {
+    const knownNames = new Set([
+      '__webdriver_evaluate', '__selenium_evaluate', '__webdriver_script_function',
+      '__webdriver_script_func', '__webdriver_script_fn', '__fxdriver_evaluate',
+      '__driver_unwrapped', '__webdriver_unwrapped', '__driver_evaluate',
+      '__selenium_unwrapped', '__fxdriver_unwrapped', '__selenium_ide_recorder',
+      'callselenium', '_selenium', '__nightmare', '__phantomas', 'callphantom',
+      '_phantom', 'domautomation', 'domautomationcontroller',
+      '__puppeteer_evaluation_script__', '__playwright_evaluation_script__',
+    ]);
+    const found = new Set();
+    try {
+      for (const name of Object.getOwnPropertyNames(window)) {
+        const lower = name.toLowerCase();
+        if (knownNames.has(lower) || /^\$?cdc_/i.test(name)) {
+          found.add(name);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    try {
+      for (const name of Object.getOwnPropertyNames(document)) {
+        if (/^\$?cdc_/i.test(name)) found.add('document.' + name);
+      }
+    } catch (e) {
+      // ignore
+    }
+    return Array.from(found);
+  }
+
+  // chromeObjectShape checks whether window.chrome, when present, has the
+  // full shape a genuine Chrome runtime exposes (loadTimes/csi/app).
+  // Stealth plugins that reconstruct window.chrome to hide headless mode
+  // commonly ship an incomplete shim missing one or more of these.
+  function chromeObjectShape() {
+    const present = !!window.chrome;
+    return {
+      loadTimes: present && typeof window.chrome.loadTimes === 'function',
+      csi: present && typeof window.chrome.csi === 'function',
+      app: present && typeof window.chrome.app === 'object' && window.chrome.app !== null,
+    };
+  }
+
+  // webdriverDescriptorAnomaly checks navigator.webdriver's property
+  // descriptor rather than just its value. Stealth patches often delete
+  // or replace the native getter on Navigator.prototype with a plain
+  // value (or an own-property shadow), which is itself a tell distinct
+  // from the webdriver flag's value.
+  function webdriverDescriptorAnomaly() {
+    try {
+      const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver');
+      if ('webdriver' in navigator && !desc) return true;
+      if (desc && desc.value !== undefined && typeof desc.get !== 'function') return true;
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // detectCDPRuntimeDomain is a best-effort check for the DevTools
+  // Protocol's Runtime domain being enabled, which Puppeteer and
+  // Playwright both do by default to receive console output. When it's
+  // active, logging an object generates a remote object preview that
+  // reads the object's own enumerable properties (including getters)
+  // even though nothing in the page itself ever accessed them. Not
+  // 100% reliable across engine versions, so it's scored lower than the
+  // artifact/descriptor checks above.
+  async function detectCDPRuntimeDomain() {
+    try {
+      let triggered = false;
+      const probe = {};
+      Object.defineProperty(probe, 'stealthaudit_probe', {
+        enumerable: true,
+        get() {
+          triggered = true;
+          return 0;
+        },
+      });
+      console.debug(probe);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return triggered;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function runtimeFingerprint() {
     try {
       const webdriverFlag = !!navigator.webdriver;
@@ -127,12 +219,23 @@
 
       const workerSupport = typeof Worker !== 'undefined';
 
+      const automationArtifacts = scanAutomationArtifacts();
+      const chromeShape = chromeObjectShape();
+      const webdriverDescriptorAnomalyFlag = webdriverDescriptorAnomaly();
+      const cdpRuntimeDomainSuspected = await detectCDPRuntimeDomain();
+
       return {
         webdriverFlag,
         functionToStringOk,
         hasChromeRuntime,
         permissionsAnomaly,
         workerSupport,
+        automationArtifacts,
+        chromeLoadTimesPresent: chromeShape.loadTimes,
+        chromeCsiPresent: chromeShape.csi,
+        chromeAppPresent: chromeShape.app,
+        webdriverDescriptorAnomaly: webdriverDescriptorAnomalyFlag,
+        cdpRuntimeDomainSuspected,
       };
     } catch (e) {
       return null;
@@ -211,7 +314,7 @@
   ]);
 
   return {
-    schemaVersion: '0.2.0',
+    schemaVersion: '0.3.0',
     userAgent: navigator.userAgent || '',
     canvas,
     webgl: webglFingerprint(),

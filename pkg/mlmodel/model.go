@@ -43,6 +43,7 @@ var FeatureNames = []string{
 	"device_memory_missing",
 	"tls_ja3_missing",
 	"http2_not_negotiated",
+	"automation_artifacts_detected",
 }
 
 // softwareRendererPatterns duplicates pkg/analyzer's list deliberately: the
@@ -96,6 +97,7 @@ func FeatureVector(fp *collector.Fingerprint, net *network.Capture) []float64 {
 		f[2] = b01(rt.PermissionsAnomaly)
 		f[3] = b01(!rt.HasChromeRuntime)
 		f[4] = b01(!rt.WorkerSupport)
+		f[13] = b01(len(rt.AutomationArtifacts) > 0)
 	}
 
 	if gl := fp.WebGL; gl != nil {
@@ -143,23 +145,24 @@ const (
 // comment for the training methodology, and run `go run ./tools/trainml`
 // to regenerate.
 var Weights = []float64{
-	3.2584,  // webdriver_flag
-	0.5977,  // function_tostring_tampered
-	1.3765,  // permissions_api_anomaly
-	0.9128,  // missing_chrome_runtime
-	0.2823,  // worker_unsupported
-	2.3320,  // software_gpu_renderer
-	0.8157,  // canvas_fingerprint_blocked
-	0.7037,  // audio_fingerprint_blocked
-	-2.4698, // hardware_concurrency_norm
-	-3.2425, // font_count_norm
-	1.0027,  // device_memory_missing
-	1.0010,  // tls_ja3_missing
-	0.8610,  // http2_not_negotiated
+	3.1249,  // webdriver_flag
+	0.6047,  // function_tostring_tampered
+	1.2852,  // permissions_api_anomaly
+	0.8769,  // missing_chrome_runtime
+	0.2877,  // worker_unsupported
+	2.3324,  // software_gpu_renderer
+	0.6922,  // canvas_fingerprint_blocked
+	0.6541,  // audio_fingerprint_blocked
+	-2.4468, // hardware_concurrency_norm
+	-3.2839, // font_count_norm
+	1.0202,  // device_memory_missing
+	0.9976,  // tls_ja3_missing
+	0.7159,  // http2_not_negotiated
+	1.0627,  // automation_artifacts_detected
 }
 
 // training accuracy on the synthetic dataset: 98.8% (8000 samples)
-var Bias = -0.8045
+var Bias = -0.7557
 
 func sigmoid(x float64) float64 {
 	return 1 / (1 + math.Exp(-x))

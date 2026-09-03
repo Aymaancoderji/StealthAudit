@@ -272,7 +272,11 @@ function render(data) {
     check(rt.functionToStringOk, 'Function.toString() unmodified') +
     check(!rt.permissionsAnomaly, 'Permissions API consistent') +
     check(rt.workerSupport, 'Web Worker support') +
-    check(rt.hasChromeRuntime, 'window.chrome.runtime present'));
+    check(rt.hasChromeRuntime, 'window.chrome.runtime present') +
+    check(!(rt.automationArtifacts && rt.automationArtifacts.length), 'No WebDriver/automation artifacts', (rt.automationArtifacts || []).join(', ') || null) +
+    check(!rt.webdriverDescriptorAnomaly, 'navigator.webdriver descriptor native') +
+    check(!rt.cdpRuntimeDomainSuspected, 'No CDP Runtime-domain preview signal') +
+    check(!rt.hasChromeRuntime || (rt.chromeLoadTimesPresent && rt.chromeCsiPresent), 'window.chrome shape complete'));
 
   const gl = fp.webgl || {}, dev = fp.device || {};
   const isSoftware = /swiftshader|llvmpipe|software rasterizer|mesa.*(softpipe|llvmpipe)/i.test(gl.unmaskedRenderer || '');

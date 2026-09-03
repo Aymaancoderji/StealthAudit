@@ -82,6 +82,7 @@ func sample(rng *rand.Rand, automated bool) ([]float64, float64) {
 	f[10] = bernoulli(0.30, 0.04) // device_memory_missing
 	f[11] = bernoulli(0.25, 0.03) // tls_ja3_missing
 	f[12] = bernoulli(0.20, 0.03) // http2_not_negotiated
+	f[13] = bernoulli(0.20, 0.005) // automation_artifacts_detected
 
 	return f, label
 }

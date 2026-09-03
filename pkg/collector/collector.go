@@ -10,7 +10,7 @@ import (
 
 // SchemaVersion is bumped whenever the Fingerprint struct's shape changes
 // in a way that breaks older JSON reports or baseline files.
-const SchemaVersion = "0.2.0"
+const SchemaVersion = "0.3.0"
 
 // Fingerprint is the normalized set of telemetry collected from one
 // browser session. Fields are filled in incrementally as collection
@@ -61,6 +61,31 @@ type RuntimeFingerprint struct {
 	HasChromeRuntime    bool     `json:"hasChromeRuntime"`
 	PermissionsAnomaly  bool     `json:"permissionsAnomaly"`
 	WorkerSupport       bool     `json:"workerSupport"`
+
+	// AutomationArtifacts lists any WebDriver/automation-shim global
+	// property names (ChromeDriver's cdc_ variables, Selenium/PhantomJS
+	// markers, etc.) found on window/document. A non-empty list is an
+	// unambiguous automation signal.
+	AutomationArtifacts []string `json:"automationArtifacts,omitempty"`
+
+	// ChromeLoadTimesPresent/ChromeCsiPresent/ChromeAppPresent describe
+	// the shape of window.chrome when present. A genuine Chrome runtime
+	// has all three; stealth patches that reconstruct window.chrome to
+	// hide headless mode often ship an incomplete shim.
+	ChromeLoadTimesPresent bool `json:"chromeLoadTimesPresent"`
+	ChromeCsiPresent       bool `json:"chromeCsiPresent"`
+	ChromeAppPresent       bool `json:"chromeAppPresent"`
+
+	// WebdriverDescriptorAnomaly reports whether navigator.webdriver's
+	// property descriptor doesn't match a native browser implementation
+	// (deleted from Navigator.prototype, or replaced with a plain value
+	// instead of a getter) — a tell distinct from the flag's value.
+	WebdriverDescriptorAnomaly bool `json:"webdriverDescriptorAnomaly"`
+
+	// CDPRuntimeDomainSuspected is a best-effort signal that the Chrome
+	// DevTools Protocol Runtime domain is enabled (as Puppeteer/Playwright
+	// do by default), detected via console.debug object-preview timing.
+	CDPRuntimeDomainSuspected bool `json:"cdpRuntimeDomainSuspected"`
 }
 
 // DeviceFingerprint captures hardware/device metrics.

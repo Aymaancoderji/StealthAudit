@@ -87,6 +87,17 @@ here since `run` is a single session; use `leaktest` for that category).
 `--out-json` writes the full report; `--out-html` writes a standalone
 dashboard.
 
+`js_runtime_integrity` includes CDP/WebDriver-specific automation checks:
+a scan for automation-framework artifacts left on `window`/`document`
+(ChromeDriver's `cdc_` variables, Selenium/PhantomJS markers), a check of
+`navigator.webdriver`'s property descriptor rather than just its value
+(catching deletion/patching that leaves the descriptor non-native), a
+best-effort detection of the Chrome DevTools Protocol Runtime domain being
+enabled (via `console.debug` object-preview timing — Puppeteer/Playwright
+both enable it by default), and a check of `window.chrome`'s shape
+(`loadTimes`/`csi`/`app`) since stealth patches that reconstruct
+`window.chrome` to hide headless mode often ship an incomplete shim.
+
 ### `leaktest`
 
 Launches two independent sessions with identical launch options and runs
@@ -129,7 +140,7 @@ the rule-based breakdown below it.
 ### ML scoring (`pkg/mlmodel`)
 
 Alongside the rule-based analyzer, every report also gets a logistic
-regression score: P(automated) computed from 13 fingerprint/network
+regression score: P(automated) computed from 14 fingerprint/network
 features, with per-feature contributions for explainability. It's a
 deliberately different technique from the rule engine — rules apply fixed
 thresholds, the model combines every signal into one weighted probability,
