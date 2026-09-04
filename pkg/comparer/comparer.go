@@ -204,5 +204,50 @@ func diffFields(baseline, target *report.Run) []FieldDiff {
 	}
 	str("HTTP/2 pseudo-header order", bPH, tPH)
 
+	var bWorkerWD, tWorkerWD string
+	if b.Runtime != nil {
+		bWorkerWD = fmt.Sprintf("leak=%v", b.Runtime.WorkerWebdriverLeak)
+	}
+	if t.Runtime != nil {
+		tWorkerWD = fmt.Sprintf("leak=%v", t.Runtime.WorkerWebdriverLeak)
+	}
+	str("Worker webdriver leak", bWorkerWD, tWorkerWD)
+
+	var bStackLeak, tStackLeak string
+	if b.Runtime != nil {
+		bStackLeak = fmt.Sprintf("%v", b.Runtime.ErrorStackAutomationLeak)
+	}
+	if t.Runtime != nil {
+		tStackLeak = fmt.Sprintf("%v", t.Runtime.ErrorStackAutomationLeak)
+	}
+	str("Error stack leak", bStackLeak, tStackLeak)
+
+	var bOuter, tOuter string
+	if b.Device != nil {
+		bOuter = fmt.Sprintf("%dx%d", b.Device.OuterWidth, b.Device.OuterHeight)
+	}
+	if t.Device != nil {
+		tOuter = fmt.Sprintf("%dx%d", t.Device.OuterWidth, t.Device.OuterHeight)
+	}
+	str("Window outer size", bOuter, tOuter)
+
+	var bUAD, tUAD string
+	if b.Device != nil && b.Device.UserAgentData != nil {
+		bUAD = b.Device.UserAgentData.Platform
+	}
+	if t.Device != nil && t.Device.UserAgentData != nil {
+		tUAD = t.Device.UserAgentData.Platform
+	}
+	str("Client hints platform", bUAD, tUAD)
+
+	var bGL2, tGL2 string
+	if b.WebGL != nil {
+		bGL2 = fmt.Sprintf("%v", b.WebGL.WebGL2Supported)
+	}
+	if t.WebGL != nil {
+		tGL2 = fmt.Sprintf("%v", t.WebGL.WebGL2Supported)
+	}
+	str("WebGL2 supported", bGL2, tGL2)
+
 	return fields
 }

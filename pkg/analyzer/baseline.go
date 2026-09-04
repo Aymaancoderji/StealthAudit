@@ -95,3 +95,27 @@ func pseudoHeaderOrderMatches(family browserFamily, observed []string) bool {
 	}
 	return true
 }
+
+// ClientHintsPlatformMatches checks whether userAgentData.platform aligns
+// with the platform claimed in the User-Agent string.
+func ClientHintsPlatformMatches(ua, uadPlatform string) bool {
+	if uadPlatform == "" || ua == "" {
+		return true // nothing to compare against
+	}
+	uaLower := strings.ToLower(ua)
+	platLower := strings.ToLower(uadPlatform)
+
+	switch platLower {
+	case "windows":
+		return strings.Contains(uaLower, "windows")
+	case "macos", "mac os x":
+		return strings.Contains(uaLower, "macintosh") || strings.Contains(uaLower, "mac os x")
+	case "linux":
+		return strings.Contains(uaLower, "linux") && !strings.Contains(uaLower, "android")
+	case "android":
+		return strings.Contains(uaLower, "android")
+	default:
+		return true
+	}
+}
+

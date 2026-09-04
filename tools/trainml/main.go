@@ -79,10 +79,14 @@ func sample(rng *rand.Rand, automated bool) ([]float64, float64) {
 	}
 	f[9] = clip01(fonts / 30.0)
 
-	f[10] = bernoulli(0.30, 0.04) // device_memory_missing
-	f[11] = bernoulli(0.25, 0.03) // tls_ja3_missing
-	f[12] = bernoulli(0.20, 0.03) // http2_not_negotiated
+	f[10] = bernoulli(0.30, 0.04)  // device_memory_missing
+	f[11] = bernoulli(0.25, 0.03)  // tls_ja3_missing
+	f[12] = bernoulli(0.20, 0.03)  // http2_not_negotiated
 	f[13] = bernoulli(0.20, 0.005) // automation_artifacts_detected
+	f[14] = bernoulli(0.35, 0.005) // worker_context_leak
+	f[15] = bernoulli(0.25, 0.001) // error_stack_automation_leak
+	f[16] = bernoulli(0.50, 0.01)  // headless_screen_geometry
+	f[17] = bernoulli(0.20, 0.005) // client_hints_platform_mismatch
 
 	return f, label
 }

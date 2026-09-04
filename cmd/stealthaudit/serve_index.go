@@ -272,6 +272,9 @@ function render(data) {
     check(rt.functionToStringOk, 'Function.toString() unmodified') +
     check(!rt.permissionsAnomaly, 'Permissions API consistent') +
     check(rt.workerSupport, 'Web Worker support') +
+    check(!rt.workerWebdriverLeak, 'Web Worker webdriver isolated') +
+    check(!rt.errorStackAutomationLeak, 'No automation frames in Error.stack') +
+    check(rt.toStringOfToStringOk !== false, 'Function.toString deep integrity') +
     check(rt.hasChromeRuntime, 'window.chrome.runtime present') +
     check(!(rt.automationArtifacts && rt.automationArtifacts.length), 'No WebDriver/automation artifacts', (rt.automationArtifacts || []).join(', ') || null) +
     check(!rt.webdriverDescriptorAnomaly, 'navigator.webdriver descriptor native') +
@@ -282,13 +285,16 @@ function render(data) {
   const isSoftware = /swiftshader|llvmpipe|software rasterizer|mesa.*(softpipe|llvmpipe)/i.test(gl.unmaskedRenderer || '');
   html += categoryCard('Hardware Consistency', cat.hardware_consistency ?? 0,
     check(!isSoftware, 'GPU renderer', gl.unmaskedRenderer || 'unknown') +
+    check(gl.webgl2Supported !== false, 'WebGL2 supported') +
     check(!!(fp.canvas && fp.canvas.hash), 'Canvas fingerprint produced') +
     check(!!(fp.audio && fp.audio.hash), 'Audio fingerprint produced') +
     check(dev.hardwareConcurrency > 1, 'CPU cores', String(dev.hardwareConcurrency ?? '?')) +
     check((dev.fonts || []).length >= 3, 'System fonts detected', String((dev.fonts || []).length)) +
     check(dev.screenWidth > 0 && dev.screenHeight > 0, 'Screen resolution', (dev.screenWidth ?? '?') + '&times;' + (dev.screenHeight ?? '?')) +
+    check(!(dev.outerWidth === 0 && dev.outerHeight === 0), 'Window geometry valid', (dev.outerWidth && dev.outerHeight) ? (dev.outerWidth + '&times;' + dev.outerHeight) : null) +
     check(dev.colorDepth >= 24, 'Color depth', dev.colorDepth ? dev.colorDepth + '-bit' : null) +
-    check(dev.deviceMemory > 0, 'Device memory', dev.deviceMemory ? dev.deviceMemory + ' GB' : 'unavailable'));
+    check(dev.deviceMemory > 0, 'Device memory', dev.deviceMemory ? dev.deviceMemory + ' GB' : 'unavailable') +
+    (dev.userAgentData && dev.userAgentData.platform ? check(true, 'Client hints platform', dev.userAgentData.platform) : ''));
 
   if (r.network) {
     const tls = r.network.tls || {}, h2 = r.network.http2 || {};

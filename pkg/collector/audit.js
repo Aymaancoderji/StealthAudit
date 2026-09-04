@@ -66,6 +66,17 @@
         shaderPrecision[label] = p ? `range[${p.rangeMin},${p.rangeMax}] precision:${p.precision}` : '';
       }
 
+      let webgl2Supported = false;
+      try {
+        const gl2 = canvas.getContext('webgl2');
+        webgl2Supported = !!gl2;
+      } catch (e) {}
+
+      let webgpuSupported = false;
+      try {
+        webgpuSupported = typeof navigator !== 'undefined' && 'gpu' in navigator && !!navigator.gpu;
+      } catch (e) {}
+
       return {
         vendor: String(vendor),
         renderer: String(renderer),
@@ -73,6 +84,8 @@
         unmaskedRenderer: String(unmaskedRenderer || ''),
         supportedExtensions,
         shaderPrecision,
+        webgl2Supported,
+        webgpuSupported,
       };
     } catch (e) {
       return null;
@@ -197,6 +210,128 @@
     }
   }
 
+  // testToStringIntegrity validates Function.prototype.toString's
+  // internal behavior, name, length, and property descriptor.
+  function testToStringIntegrity() {
+    try {
+      const fnToString = Function.prototype.toString;
+      const s1 = fnToString.call(fnToString);
+      const s2 = fnToString.call(fnToString.toString);
+      const name = fnToString.name;
+      const length = fnToString.length;
+
+      const toStringOfToStringOk =
+        s1.includes('[native code]') &&
+        s2.includes('[native code]') &&
+        s1.includes('toString') &&
+        name === 'toString' &&
+        length === 0;
+
+      let descriptorAnomaly = false;
+      const desc = Object.getOwnPropertyDescriptor(Function.prototype, 'toString');
+      if (!desc || desc.enumerable !== false || desc.writable !== true || desc.configurable !== true) {
+        descriptorAnomaly = true;
+      }
+
+      return { toStringOfToStringOk, descriptorAnomaly };
+    } catch (e) {
+      return { toStringOfToStringOk: false, descriptorAnomaly: true };
+    }
+  }
+
+  // inspectErrorStack inspects new Error().stack for internal automation
+  // runner evaluation traces or test framework artifacts.
+  function inspectErrorStack() {
+    try {
+      const err = new Error('stealthaudit_stack_probe');
+      const stack = err.stack || '';
+      const patterns = [
+        '__puppeteer_evaluation_script__',
+        '__playwright_evaluation_script__',
+        'pptr:',
+        'playwright/',
+        'selenium-webdriver',
+        'execute_async_script',
+        'callphantom',
+      ];
+      const artifacts = [];
+      const lower = stack.toLowerCase();
+      for (const p of patterns) {
+        if (lower.includes(p.toLowerCase())) {
+          artifacts.push(p);
+        }
+      }
+      if (/\$?cdc_[a-z0-9]+/i.test(stack)) {
+        artifacts.push('cdc_stack_frame');
+      }
+      return {
+        leak: artifacts.length > 0,
+        artifacts,
+      };
+    } catch (e) {
+      return { leak: false, artifacts: [] };
+    }
+  }
+
+  // workerProbe spawns an inline Web Worker via Blob to cross-validate
+  // window-level telemetry against an isolated worker context.
+  async function workerProbe(windowUA, windowPlatform, windowConcurrency, windowWebdriver) {
+    try {
+      if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') {
+        return { workerExecutionOk: false };
+      }
+      const workerCode = 'self.onmessage=function(){self.postMessage({userAgent:navigator.userAgent||\'\',platform:navigator.platform||\'\',hardwareConcurrency:navigator.hardwareConcurrency||0,webdriver:!!navigator.webdriver,deviceMemory:navigator.deviceMemory||0});};';
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      const blobUrl = URL.createObjectURL(blob);
+      const worker = new Worker(blobUrl);
+
+      const result = await new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          try { worker.terminate(); } catch (e) {}
+          try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+          resolve(null);
+        }, 500);
+
+        worker.onmessage = (e) => {
+          clearTimeout(timer);
+          try { worker.terminate(); } catch (e) {}
+          try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+          resolve(e.data);
+        };
+
+        worker.onerror = () => {
+          clearTimeout(timer);
+          try { worker.terminate(); } catch (e) {}
+          try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+          resolve(null);
+        };
+
+        worker.postMessage('audit');
+      });
+
+      if (!result) {
+        return { workerExecutionOk: false };
+      }
+
+      const workerWebdriverLeak = !!result.webdriver && !windowWebdriver;
+      const workerUserAgentMismatch = !!(windowUA && result.userAgent && result.userAgent !== windowUA);
+      const workerConcurrencyMismatch = !!(windowConcurrency > 0 && result.hardwareConcurrency > 0 && result.hardwareConcurrency !== windowConcurrency);
+      const workerPlatformMismatch = !!(windowPlatform && result.platform && result.platform !== windowPlatform);
+
+      return {
+        workerExecutionOk: true,
+        workerWebdriverLeak,
+        workerUserAgentMismatch,
+        workerConcurrencyMismatch,
+        workerPlatformMismatch,
+        workerUserAgent: result.userAgent || '',
+        workerPlatform: result.platform || '',
+      };
+    } catch (e) {
+      return { workerExecutionOk: false };
+    }
+  }
+
   async function runtimeFingerprint() {
     try {
       const webdriverFlag = !!navigator.webdriver;
@@ -209,20 +344,24 @@
       try {
         if (navigator.permissions && navigator.permissions.query && typeof Notification !== 'undefined') {
           const status = await navigator.permissions.query({ name: 'notifications' });
-          // Known headless-Chrome tell: Notification.permission reports
-          // "denied" while the Permissions API still reports "prompt".
           permissionsAnomaly = Notification.permission === 'denied' && status.state === 'prompt';
         }
-      } catch (e) {
-        // ignore; leave permissionsAnomaly false
-      }
+      } catch (e) {}
 
       const workerSupport = typeof Worker !== 'undefined';
-
       const automationArtifacts = scanAutomationArtifacts();
       const chromeShape = chromeObjectShape();
       const webdriverDescriptorAnomalyFlag = webdriverDescriptorAnomaly();
       const cdpRuntimeDomainSuspected = await detectCDPRuntimeDomain();
+
+      const toStringIntegrity = testToStringIntegrity();
+      const stackInspection = inspectErrorStack();
+      const workerResult = await workerProbe(
+        navigator.userAgent || '',
+        navigator.platform || '',
+        navigator.hardwareConcurrency || 0,
+        webdriverFlag
+      );
 
       return {
         webdriverFlag,
@@ -236,6 +375,17 @@
         chromeAppPresent: chromeShape.app,
         webdriverDescriptorAnomaly: webdriverDescriptorAnomalyFlag,
         cdpRuntimeDomainSuspected,
+        toStringOfToStringOk: toStringIntegrity.toStringOfToStringOk,
+        toStringDescriptorAnomaly: toStringIntegrity.descriptorAnomaly,
+        errorStackAutomationLeak: stackInspection.leak,
+        errorStackArtifacts: stackInspection.artifacts,
+        workerExecutionOk: !!workerResult.workerExecutionOk,
+        workerWebdriverLeak: !!workerResult.workerWebdriverLeak,
+        workerUserAgentMismatch: !!workerResult.workerUserAgentMismatch,
+        workerConcurrencyMismatch: !!workerResult.workerConcurrencyMismatch,
+        workerPlatformMismatch: !!workerResult.workerPlatformMismatch,
+        workerUserAgent: workerResult.workerUserAgent || '',
+        workerPlatform: workerResult.workerPlatform || '',
       };
     } catch (e) {
       return null;
@@ -285,7 +435,7 @@
     return detected;
   }
 
-  function deviceFingerprint() {
+  async function deviceFingerprint() {
     try {
       let fonts = [];
       try {
@@ -293,6 +443,52 @@
       } catch (e) {
         fonts = [];
       }
+
+      let mediaDeviceCount = 0;
+      try {
+        if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          mediaDeviceCount = devs ? devs.length : 0;
+        }
+      } catch (e) {}
+
+      let speechVoiceCount = 0;
+      try {
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+          speechVoiceCount = window.speechSynthesis.getVoices().length;
+        }
+      } catch (e) {}
+
+      let userAgentData = null;
+      try {
+        if (navigator.userAgentData) {
+          const uad = navigator.userAgentData;
+          let highEntropy = {};
+          if (typeof uad.getHighEntropyValues === 'function') {
+            try {
+              highEntropy = await uad.getHighEntropyValues([
+                'architecture',
+                'bitness',
+                'model',
+                'platform',
+                'platformVersion',
+              ]);
+            } catch (e) {}
+          }
+          userAgentData = {
+            mobile: !!uad.mobile,
+            platform: uad.platform || highEntropy.platform || '',
+            architecture: highEntropy.architecture || '',
+            bitness: highEntropy.bitness || '',
+            model: highEntropy.model || '',
+            platformVersion: highEntropy.platformVersion || '',
+            brands: Array.isArray(uad.brands)
+              ? uad.brands.map((b) => ({ brand: String(b.brand), version: String(b.version) }))
+              : [],
+          };
+        }
+      } catch (e) {}
+
       return {
         screenWidth: screen.width || 0,
         screenHeight: screen.height || 0,
@@ -301,25 +497,36 @@
         hardwareConcurrency: navigator.hardwareConcurrency || 0,
         touchPoints: navigator.maxTouchPoints || 0,
         fonts,
+        outerWidth: window.outerWidth || 0,
+        outerHeight: window.outerHeight || 0,
+        innerWidth: window.innerWidth || 0,
+        innerHeight: window.innerHeight || 0,
+        screenX: window.screenX !== undefined ? window.screenX : 0,
+        screenY: window.screenY !== undefined ? window.screenY : 0,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        mediaDeviceCount,
+        speechVoiceCount,
+        userAgentData,
       };
     } catch (e) {
       return null;
     }
   }
 
-  const [canvas, audio, runtime] = await Promise.all([
+  const [canvas, audio, runtime, device] = await Promise.all([
     canvasFingerprint(),
     audioFingerprint(),
     runtimeFingerprint(),
+    deviceFingerprint(),
   ]);
 
   return {
-    schemaVersion: '0.3.0',
+    schemaVersion: '0.4.0',
     userAgent: navigator.userAgent || '',
     canvas,
     webgl: webglFingerprint(),
     audio,
     runtime,
-    device: deviceFingerprint(),
+    device,
   };
 })()

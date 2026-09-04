@@ -94,9 +94,20 @@ a scan for automation-framework artifacts left on `window`/`document`
 (catching deletion/patching that leaves the descriptor non-native), a
 best-effort detection of the Chrome DevTools Protocol Runtime domain being
 enabled (via `console.debug` object-preview timing — Puppeteer/Playwright
-both enable it by default), and a check of `window.chrome`'s shape
-(`loadTimes`/`csi`/`app`) since stealth patches that reconstruct
-`window.chrome` to hide headless mode often ship an incomplete shim.
+both enable it by default), deep `Function.prototype.toString` validation
+("toString of toString" check, name/length invariants, and property descriptor
+tampering), Error stack trace inspection for runner evaluation scripts
+(catching Puppeteer/Playwright/Selenium frames), and isolated Web Worker
+cross-validation (spawning an inline worker to catch stealth shims that only
+patch window `navigator` while leaking `webdriver` or real platform values
+inside workers).
+
+`hardware_consistency` inspects WebGL renderer (software rasterizers like
+SwiftShader/llvmpipe), WebGL2/WebGPU availability, canvas/audio hashes,
+screen geometry (outerWidth/outerHeight headless zero-dimension tells),
+User-Agent Client Hints alignment (`navigator.userAgentData.platform`
+cross-checked against the User-Agent string), and system metrics (core counts,
+font enumeration, media devices, and speech synthesis voices).
 
 ### `leaktest`
 
@@ -155,9 +166,6 @@ same domain knowledge `pkg/analyzer/baseline.go` encodes as rules — see
 
 ## Known gaps
 
-- No automated test suite (`*_test.go`) yet — the analyzer rules,
-  fingerprint parsing, and comparer logic are all currently only manually
-  verified.
 - Firefox/WebKit are wired into the orchestrator and adapters but have only
   been exercised on Chromium so far.
 - The rule-based scorer (`pkg/analyzer/rules.go`) intentionally avoids

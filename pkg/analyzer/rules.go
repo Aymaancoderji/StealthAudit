@@ -85,12 +85,36 @@ func (RuleScorer) Score(in Input) (*Report, error) {
 			add(CategoryJSRuntimeIntegrity, "chrome_object_missing", 3,
 				"User-Agent claims a Chromium-based browser but window.chrome.runtime is absent, as commonly seen in headless/automated Chrome without the window.chrome shim")
 		}
+		if rt.WorkerWebdriverLeak {
+			add(CategoryJSRuntimeIntegrity, "worker_webdriver_leak", 5,
+				"navigator.webdriver is true in an isolated Web Worker despite being masked on window")
+		}
+		if rt.WorkerUserAgentMismatch || rt.WorkerConcurrencyMismatch || rt.WorkerPlatformMismatch {
+			add(CategoryJSRuntimeIntegrity, "worker_environment_mismatch", 4,
+				"Web Worker environment signals contradict window scope (workerUserAgent=%q, workerPlatform=%q)",
+				rt.WorkerUserAgent, rt.WorkerPlatform)
+		}
+		if rt.ErrorStackAutomationLeak {
+			add(CategoryJSRuntimeIntegrity, "error_stack_automation_leak", 5,
+				"Error stack trace exposed automation runner frames or evaluation scripts (%s)",
+				strings.Join(rt.ErrorStackArtifacts, ", "))
+		}
+		if rt.ToStringDescriptorAnomaly || !rt.ToStringOfToStringOK {
+			add(CategoryJSRuntimeIntegrity, "function_tostring_deep_tamper", 4,
+				"Function.prototype.toString failed deep integrity or descriptor checks, indicating function tampering")
+		}
 	}
 
-	if fp != nil && fp.WebGL != nil && isSoftwareRenderer(fp.WebGL.UnmaskedRenderer) {
-		add(CategoryHardwareConsistency, "software_gpu_renderer", 5,
-			"WebGL reports a software rasterizer (%q) instead of real GPU hardware — the default in most headless/CI environments",
-			fp.WebGL.UnmaskedRenderer)
+	if fp != nil && fp.WebGL != nil {
+		if isSoftwareRenderer(fp.WebGL.UnmaskedRenderer) {
+			add(CategoryHardwareConsistency, "software_gpu_renderer", 5,
+				"WebGL reports a software rasterizer (%q) instead of real GPU hardware — the default in most headless/CI environments",
+				fp.WebGL.UnmaskedRenderer)
+		}
+		if family != familyUnknown && !fp.WebGL.WebGL2Supported {
+			add(CategoryHardwareConsistency, "webgl2_unsupported", 2,
+				"WebGL2 context unavailable on modern browser engine")
+		}
 	}
 	if fp != nil && fp.Canvas != nil && fp.Canvas.Hash == "" {
 		add(CategoryHardwareConsistency, "canvas_fingerprint_blocked", 3,
@@ -113,6 +137,20 @@ func (RuleScorer) Score(in Input) (*Report, error) {
 		if family == familyChromium && dev.DeviceMemory == 0 {
 			add(CategoryHardwareConsistency, "device_memory_missing_on_chromium", 2,
 				"Chrome always implements navigator.deviceMemory; a value of 0 suggests a non-standard or stripped-down runtime")
+		}
+		if (dev.OuterWidth == 0 && dev.OuterHeight == 0) || (dev.OuterWidth > 0 && dev.InnerWidth > dev.OuterWidth) {
+			add(CategoryHardwareConsistency, "headless_screen_geometry", 4,
+				"Window geometry reports outer dimensions outerWidth=%d, outerHeight=%d, indicating a headless browser window",
+				dev.OuterWidth, dev.OuterHeight)
+		}
+		if dev.UserAgentData != nil && !ClientHintsPlatformMatches(fp.UserAgent, dev.UserAgentData.Platform) {
+			add(CategoryHardwareConsistency, "client_hints_platform_mismatch", 4,
+				"navigator.userAgentData.platform (%q) contradicts claimed User-Agent platform",
+				dev.UserAgentData.Platform)
+		}
+		if family == familyChromium && dev.SpeechVoiceCount == 0 && (strings.Contains(strings.ToLower(fp.UserAgent), "windows") || strings.Contains(strings.ToLower(fp.UserAgent), "macintosh")) {
+			add(CategoryHardwareConsistency, "speech_voices_empty", 2,
+				"Desktop Chromium environment reports 0 SpeechSynthesis voices, typical of automated/headless environments")
 		}
 	}
 

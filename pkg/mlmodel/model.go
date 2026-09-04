@@ -21,6 +21,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/Aymaancoderji/StealthAudit/pkg/collector"
 	"github.com/Aymaancoderji/StealthAudit/pkg/network"
@@ -44,6 +45,10 @@ var FeatureNames = []string{
 	"tls_ja3_missing",
 	"http2_not_negotiated",
 	"automation_artifacts_detected",
+	"worker_context_leak",
+	"error_stack_automation_leak",
+	"headless_screen_geometry",
+	"client_hints_platform_mismatch",
 }
 
 // softwareRendererPatterns duplicates pkg/analyzer's list deliberately: the
@@ -64,6 +69,26 @@ func isSoftwareRenderer(renderer string) bool {
 		}
 	}
 	return false
+}
+
+func clientHintsPlatformMatches(ua, uadPlatform string) bool {
+	if uadPlatform == "" || ua == "" {
+		return true
+	}
+	uaLower := strings.ToLower(ua)
+	platLower := strings.ToLower(uadPlatform)
+	switch platLower {
+	case "windows":
+		return strings.Contains(uaLower, "windows")
+	case "macos", "mac os x":
+		return strings.Contains(uaLower, "macintosh") || strings.Contains(uaLower, "mac os x")
+	case "linux":
+		return strings.Contains(uaLower, "linux") && !strings.Contains(uaLower, "android")
+	case "android":
+		return strings.Contains(uaLower, "android")
+	default:
+		return true
+	}
 }
 
 func b01(b bool) float64 {
@@ -93,11 +118,13 @@ func FeatureVector(fp *collector.Fingerprint, net *network.Capture) []float64 {
 
 	if rt := fp.Runtime; rt != nil {
 		f[0] = b01(rt.WebdriverFlag)
-		f[1] = b01(!rt.FunctionToStringOK)
+		f[1] = b01(!rt.FunctionToStringOK || !rt.ToStringOfToStringOK || rt.ToStringDescriptorAnomaly)
 		f[2] = b01(rt.PermissionsAnomaly)
 		f[3] = b01(!rt.HasChromeRuntime)
 		f[4] = b01(!rt.WorkerSupport)
 		f[13] = b01(len(rt.AutomationArtifacts) > 0)
+		f[14] = b01(rt.WorkerWebdriverLeak || rt.WorkerUserAgentMismatch || rt.WorkerPlatformMismatch)
+		f[15] = b01(rt.ErrorStackAutomationLeak)
 	}
 
 	if gl := fp.WebGL; gl != nil {
@@ -111,6 +138,8 @@ func FeatureVector(fp *collector.Fingerprint, net *network.Capture) []float64 {
 		f[8] = clip01(float64(dev.HardwareConcurrency) / 16.0)
 		f[9] = clip01(float64(len(dev.Fonts)) / 30.0)
 		f[10] = b01(dev.DeviceMemory == 0)
+		f[16] = b01((dev.OuterWidth == 0 && dev.OuterHeight == 0) || (dev.OuterWidth > 0 && dev.InnerWidth > dev.OuterWidth))
+		f[17] = b01(dev.UserAgentData != nil && !clientHintsPlatformMatches(fp.UserAgent, dev.UserAgentData.Platform))
 	}
 
 	f[11] = b01(net == nil || net.TLS == nil || net.TLS.JA3 == "")
@@ -145,24 +174,28 @@ const (
 // comment for the training methodology, and run `go run ./tools/trainml`
 // to regenerate.
 var Weights = []float64{
-	3.1249,  // webdriver_flag
-	0.6047,  // function_tostring_tampered
-	1.2852,  // permissions_api_anomaly
-	0.8769,  // missing_chrome_runtime
-	0.2877,  // worker_unsupported
-	2.3324,  // software_gpu_renderer
-	0.6922,  // canvas_fingerprint_blocked
-	0.6541,  // audio_fingerprint_blocked
-	-2.4468, // hardware_concurrency_norm
-	-3.2839, // font_count_norm
-	1.0202,  // device_memory_missing
-	0.9976,  // tls_ja3_missing
-	0.7159,  // http2_not_negotiated
-	1.0627,  // automation_artifacts_detected
+	2.7489, // webdriver_flag
+	0.4858, // function_tostring_tampered
+	1.1101, // permissions_api_anomaly
+	0.8172, // missing_chrome_runtime
+	0.2208, // worker_unsupported
+	2.1468, // software_gpu_renderer
+	0.5642, // canvas_fingerprint_blocked
+	0.5067, // audio_fingerprint_blocked
+	-2.1014, // hardware_concurrency_norm
+	-2.8281, // font_count_norm
+	0.8848, // device_memory_missing
+	0.8708, // tls_ja3_missing
+	0.6217, // http2_not_negotiated
+	0.8757, // automation_artifacts_detected
+	1.3449, // worker_context_leak
+	1.0286, // error_stack_automation_leak
+	1.6515, // headless_screen_geometry
+	0.8999, // client_hints_platform_mismatch
 }
 
-// training accuracy on the synthetic dataset: 98.8% (8000 samples)
-var Bias = -0.7557
+// training accuracy on the synthetic dataset: 99.5% (8000 samples)
+var Bias = -1.4007
 
 func sigmoid(x float64) float64 {
 	return 1 / (1 + math.Exp(-x))

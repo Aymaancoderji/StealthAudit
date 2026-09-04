@@ -129,22 +129,30 @@
         <tr><th>WebGL renderer</th><td>{{.WebGL.Renderer}}</td></tr>
         <tr><th>WebGL unmasked vendor</th><td>{{.WebGL.UnmaskedVendor}}</td></tr>
         <tr><th>WebGL unmasked renderer</th><td>{{.WebGL.UnmaskedRenderer}}</td></tr>
+        <tr><th>WebGL2 supported</th><td>{{.WebGL.WebGL2Supported}}</td></tr>
         {{end}}
         {{if .Canvas}}<tr><th>Canvas hash</th><td class="mono">{{.Canvas.Hash}}</td></tr>{{end}}
         {{if .Audio}}<tr><th>Audio hash</th><td class="mono">{{.Audio.Hash}}</td></tr>{{end}}
         {{if .Runtime}}
         <tr><th>navigator.webdriver</th><td>{{.Runtime.WebdriverFlag}}</td></tr>
         <tr><th>Function.toString OK</th><td>{{.Runtime.FunctionToStringOK}}</td></tr>
+        <tr><th>toString() deep integrity</th><td>{{.Runtime.ToStringOfToStringOK}}</td></tr>
+        <tr><th>Worker webdriver leak</th><td>{{.Runtime.WorkerWebdriverLeak}}</td></tr>
+        <tr><th>Error stack leak</th><td>{{.Runtime.ErrorStackAutomationLeak}}</td></tr>
         <tr><th>window.chrome.runtime</th><td>{{.Runtime.HasChromeRuntime}}</td></tr>
         <tr><th>Permissions API anomaly</th><td>{{.Runtime.PermissionsAnomaly}}</td></tr>
         <tr><th>Worker support</th><td>{{.Runtime.WorkerSupport}}</td></tr>
         {{end}}
         {{if .Device}}
-        <tr><th>Screen</th><td>{{.Device.ScreenWidth}}x{{.Device.ScreenHeight}} @ {{.Device.ColorDepth}}bit</td></tr>
+        <tr><th>Screen resolution</th><td>{{.Device.ScreenWidth}}x{{.Device.ScreenHeight}} @ {{.Device.ColorDepth}}bit</td></tr>
+        <tr><th>Window outer size</th><td>{{.Device.OuterWidth}}x{{.Device.OuterHeight}} (dpr={{.Device.DevicePixelRatio}})</td></tr>
         <tr><th>Device memory</th><td>{{.Device.DeviceMemory}} GB</td></tr>
         <tr><th>Hardware concurrency</th><td>{{.Device.HardwareConcurrency}}</td></tr>
         <tr><th>Touch points</th><td>{{.Device.TouchPoints}}</td></tr>
         <tr><th>Fonts ({{len .Device.Fonts}})</th><td>{{range .Device.Fonts}}{{.}} {{end}}</td></tr>
+        {{if .Device.UserAgentData}}
+        <tr><th>Client Hints platform</th><td>{{.Device.UserAgentData.Platform}} (arch={{.Device.UserAgentData.Architecture}})</td></tr>
+        {{end}}
         {{end}}
       </table>
     </details>
