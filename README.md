@@ -19,7 +19,11 @@ untested but wired up, Firefox/WebKit). No automated test suite yet.
 ## Layout
 
 ```
-cmd/stealthaudit/     CLI entrypoint (run, leaktest, compare, serve, list-drivers)
+cmd/stealthaudit/     CLI entrypoint (run, leaktest, compare, serve, gateway, list-drivers)
+pkg/client/            Standalone browser SDK (stealthaudit.js) for live website deployment
+pkg/gateway/           Real-time telemetry ingestion, scoring, and token issuance server
+pkg/token/             Cryptographic SAT token issuance and verification (HMAC-SHA256)
+pkg/middleware/        Drop-in server-side HTTP middleware for protecting API endpoints
 pkg/orchestrator/      BrowserAdapter interface + driver adapters (Playwright/Puppeteer/Selenium)
 pkg/collector/         Fingerprint schema + in-browser audit script (audit.js) collection
 pkg/network/           TLS (JA3/JA4) and HTTP/2 fingerprint capture via a local probe server
@@ -67,6 +71,9 @@ stealthaudit compare --baseline=chrome_real.json --target=playwright_stealth.jso
 # can see what a genuine, non-automated session looks like and sanity-check
 # the collector against it.
 stealthaudit serve --port=8765
+
+# Launch the production real-time Ingestion & Scoring Gateway with interactive demo.
+stealthaudit gateway --port=8080
 
 stealthaudit list-drivers
 ```
@@ -163,6 +170,25 @@ corpus of real fingerprints available to this project, so the weights
 same domain knowledge `pkg/analyzer/baseline.go` encodes as rules — see
 `tools/trainml/main.go` for the full methodology, and run
 `go run ./tools/trainml` to regenerate.
+
+### `gateway` & Real-Time Bot Detection (Phase 1)
+
+Runs StealthAudit as an in-line telemetry evaluation & token issuance gateway:
+
+- **Embeddable Browser SDK (`pkg/client/stealthaudit.js`)**: Include `<script src="http://localhost:8080/stealthaudit.js"></script>` on any web page. The SDK runs asynchronously via `requestIdleCallback`, gathers deep browser telemetry, submits to `/v1/telemetry`, and injects a signed `_stealthaudit_token` into forms or exposes `window.StealthAudit.getToken()`.
+- **Signed Assessment Tokens (`pkg/token`)**: Tokens are cryptographically signed using HMAC-SHA256 and encode the visitor ID, stealth score, ML bot probability, and policy decision (`allow`, `challenge`, or `block`) with replay protection nonces and expirations.
+- **Server-Side Protection Middleware (`pkg/middleware`)**: Drop-in Go HTTP middleware protecting sensitive routes:
+  ```go
+  verifier, _ := token.NewVerifier([]byte("your-secret-key"))
+  protected := middleware.Protect(verifier, middleware.Config{
+      Policy: middleware.Policy{
+          MaxBotProbability: 0.85,
+          MinScore:          40.0,
+      },
+  })(apiHandler)
+  ```
+- **Remote Verification Endpoint (`POST /v1/verify`)**: Allows backend services to verify token validity over HTTP.
+- **Live Demo Page (`GET /demo` / `GET /`)**: Interactive web console testing live client fingerprinting and protected action submission against bot detection policies.
 
 ## Known gaps
 

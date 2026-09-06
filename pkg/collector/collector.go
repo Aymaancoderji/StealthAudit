@@ -4,6 +4,10 @@ package collector
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strings"
 
 	"github.com/Aymaancoderji/StealthAudit/pkg/orchestrator"
 )
@@ -159,3 +163,31 @@ type DeviceFingerprint struct {
 type Collector interface {
 	Collect(ctx context.Context, session orchestrator.Session) (*Fingerprint, error)
 }
+
+// ComputeVisitorID derives a stable identifier from fingerprint signals
+// that survive cookie/storage clearing and don't depend on IP.
+func ComputeVisitorID(fp *Fingerprint) string {
+	if fp == nil {
+		return ""
+	}
+	var parts []string
+	parts = append(parts, fp.UserAgent)
+	if fp.WebGL != nil {
+		parts = append(parts, fp.WebGL.UnmaskedVendor, fp.WebGL.UnmaskedRenderer)
+	}
+	if fp.Canvas != nil {
+		parts = append(parts, fp.Canvas.Hash)
+	}
+	if fp.Audio != nil {
+		parts = append(parts, fp.Audio.Hash)
+	}
+	if fp.Device != nil {
+		parts = append(parts,
+			fmt.Sprint(fp.Device.ScreenWidth), fmt.Sprint(fp.Device.ScreenHeight),
+			fmt.Sprint(fp.Device.ColorDepth), fmt.Sprint(fp.Device.HardwareConcurrency),
+			fmt.Sprintf("%v", fp.Device.DeviceMemory), strings.Join(fp.Device.Fonts, ","))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return hex.EncodeToString(sum[:])
+}
+

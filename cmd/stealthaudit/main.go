@@ -37,6 +37,8 @@ func main() {
 		cmdCompare(os.Args[2:])
 	case "serve":
 		cmdServe(os.Args[2:])
+	case "gateway":
+		cmdGateway(os.Args[2:])
 	case "list-drivers":
 		cmdListDrivers()
 	case "-h", "--help", "help":
@@ -56,6 +58,7 @@ Usage:
   stealthaudit leaktest [flags]
   stealthaudit compare --baseline=<file> --target=<file> [--out-html=<file>]
   stealthaudit serve [--port=<n>]
+  stealthaudit gateway [--port=<n>] [--secret=<key>]
   stealthaudit list-drivers
 
 Run "stealthaudit <command> -h" for flag details.

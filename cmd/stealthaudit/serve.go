@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -152,25 +150,7 @@ func (s *visitorStore) save() {
 // approach real fingerprinting products use to recognize returning
 // visitors without any client-side state.
 func computeVisitorID(fp *collector.Fingerprint) string {
-	var parts []string
-	parts = append(parts, fp.UserAgent)
-	if fp.WebGL != nil {
-		parts = append(parts, fp.WebGL.UnmaskedVendor, fp.WebGL.UnmaskedRenderer)
-	}
-	if fp.Canvas != nil {
-		parts = append(parts, fp.Canvas.Hash)
-	}
-	if fp.Audio != nil {
-		parts = append(parts, fp.Audio.Hash)
-	}
-	if fp.Device != nil {
-		parts = append(parts,
-			fmt.Sprint(fp.Device.ScreenWidth), fmt.Sprint(fp.Device.ScreenHeight),
-			fmt.Sprint(fp.Device.ColorDepth), fmt.Sprint(fp.Device.HardwareConcurrency),
-			fmt.Sprintf("%v", fp.Device.DeviceMemory), strings.Join(fp.Device.Fonts, ","))
-	}
-	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
-	return hex.EncodeToString(sum[:])
+	return collector.ComputeVisitorID(fp)
 }
 
 func cmdServe(args []string) {

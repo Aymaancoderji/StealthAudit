@@ -1,5 +1,6 @@
 /bin/
 /dist/
+/stealthaudit
 *.exe
 node_modules/
 *.log
