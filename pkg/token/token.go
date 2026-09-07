@@ -44,6 +44,8 @@ type Claims struct {
 	BotProbability float64  `json:"bp"`
 	Decision       Decision `json:"dec"`
 	Flags          []string `json:"flg,omitempty"`
+	ChallengeVerified bool     `json:"chv,omitempty"`
+	BehavioralScore   float64  `json:"bhs,omitempty"`
 	IssuedAt       int64    `json:"iat"`
 	ExpiresAt      int64    `json:"exp"`
 	Nonce          string   `json:"nonce"`

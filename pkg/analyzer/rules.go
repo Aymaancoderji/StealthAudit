@@ -103,6 +103,32 @@ func (RuleScorer) Score(in Input) (*Report, error) {
 			add(CategoryJSRuntimeIntegrity, "function_tostring_deep_tamper", 4,
 				"Function.prototype.toString failed deep integrity or descriptor checks, indicating function tampering")
 		}
+		if rt.ProxyTrapDetected {
+			add(CategoryJSRuntimeIntegrity, "proxy_trap_detected", 5,
+				"Core browser objects (navigator/screen) were detected to be wrapped in a JavaScript Proxy shim")
+		}
+		if rt.NativeGetterTampered {
+			add(CategoryJSRuntimeIntegrity, "native_getter_tampered", 4,
+				"Native prototype getter invocation with an invalid receiver did not throw native engine TypeError, indicating a polyfilled or tampered getter")
+		}
+	}
+
+	if fp != nil && fp.Behavioral != nil {
+		beh := fp.Behavioral
+		if beh.HasUntrustedEvents || beh.SyntheticEventDetected {
+			add(CategoryJSRuntimeIntegrity, "untrusted_synthetic_events", 5,
+				"Synthetic or untrusted DOM events (isTrusted=false or dispatch anomalies) detected during interaction")
+		}
+		if beh.MouseMovementCount > 5 && beh.MouseStraightLineRatio > 0.95 {
+			add(CategoryJSRuntimeIntegrity, "linear_mouse_trajectory", 3,
+				"Mouse movement trajectory is unnaturally straight (ratio=%.2f), characteristic of scripted coordinate interpolation",
+				beh.MouseStraightLineRatio)
+		}
+		if beh.KeyStrokeCount >= 4 && beh.KeyFlightVariance < 2.0 {
+			add(CategoryJSRuntimeIntegrity, "mechanical_keystroke_timing", 3,
+				"Keystroke flight time variance is unnaturally low (variance=%.2f ms), characteristic of automated typing loops",
+				beh.KeyFlightVariance)
+		}
 	}
 
 	if fp != nil && fp.WebGL != nil {

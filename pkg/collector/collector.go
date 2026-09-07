@@ -14,11 +14,11 @@ import (
 
 // SchemaVersion is bumped whenever the Fingerprint struct's shape changes
 // in a way that breaks older JSON reports or baseline files.
-const SchemaVersion = "0.4.0"
+const SchemaVersion = "0.5.0"
 
 // Fingerprint is the normalized set of telemetry collected from one
 // browser session. Fields are filled in incrementally as collection
-// sub-modules (canvas, audio, runtime, device) are implemented.
+// sub-modules (canvas, audio, runtime, device, behavioral) are implemented.
 type Fingerprint struct {
 	SchemaVersion string `json:"schemaVersion"`
 
@@ -28,11 +28,24 @@ type Fingerprint struct {
 	// behavior — to catch claim/evidence mismatches.
 	UserAgent string `json:"userAgent"`
 
-	Canvas  *CanvasFingerprint  `json:"canvas,omitempty"`
-	WebGL   *WebGLFingerprint   `json:"webgl,omitempty"`
-	Audio   *AudioFingerprint   `json:"audio,omitempty"`
-	Runtime *RuntimeFingerprint `json:"runtime,omitempty"`
-	Device  *DeviceFingerprint  `json:"device,omitempty"`
+	Canvas     *CanvasFingerprint     `json:"canvas,omitempty"`
+	WebGL      *WebGLFingerprint      `json:"webgl,omitempty"`
+	Audio      *AudioFingerprint      `json:"audio,omitempty"`
+	Runtime    *RuntimeFingerprint    `json:"runtime,omitempty"`
+	Device     *DeviceFingerprint     `json:"device,omitempty"`
+	Behavioral *BehavioralFingerprint `json:"behavioral,omitempty"`
+}
+
+// BehavioralFingerprint captures human interaction dynamics and kinematics.
+type BehavioralFingerprint struct {
+	MouseMovementCount      int     `json:"mouseMovementCount"`
+	MouseTrajectoryVariance float64 `json:"mouseTrajectoryVariance"`
+	MouseStraightLineRatio  float64 `json:"mouseStraightLineRatio"`
+	KeyStrokeCount          int     `json:"keyStrokeCount"`
+	KeyFlightVariance       float64 `json:"keyFlightVariance"`
+	ScrollEventCount        int     `json:"scrollEventCount"`
+	HasUntrustedEvents      bool    `json:"hasUntrustedEvents"`
+	SyntheticEventDetected  bool    `json:"syntheticEventDetected"`
 }
 
 // CanvasFingerprint captures 2D canvas rendering output.
@@ -118,6 +131,14 @@ type RuntimeFingerprint struct {
 	WorkerPlatformMismatch    bool   `json:"workerPlatformMismatch"`
 	WorkerUserAgent           string `json:"workerUserAgent,omitempty"`
 	WorkerPlatform            string `json:"workerPlatform,omitempty"`
+
+	// ProxyTrapDetected reports whether core browser APIs (navigator, screen)
+	// were detected to be wrapped in a JavaScript Proxy shim.
+	ProxyTrapDetected bool `json:"proxyTrapDetected"`
+
+	// NativeGetterTampered reports whether calling native prototype getters
+	// with an invalid this receiver bypassed the native engine TypeError.
+	NativeGetterTampered bool `json:"nativeGetterTampered"`
 }
 
 // BrandVersion captures one brand/version entry from userAgentData.brands.

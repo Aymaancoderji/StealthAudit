@@ -273,6 +273,51 @@
     }
   }
 
+  // testProxyTraps detects if core browser objects or their prototypes are wrapped in Proxy
+  function testProxyTraps() {
+    try {
+      if (typeof Proxy === 'undefined') return false;
+      const targets = [navigator, screen];
+      for (const t of targets) {
+        try {
+          const str = Object.prototype.toString.call(t);
+          if (!str.startsWith('[object ')) {
+            return true;
+          }
+        } catch (e) {
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // testNativeGetters validates that prototype getters enforce native receiver checks
+  function testNativeGetters() {
+    try {
+      if (typeof Navigator === 'undefined' || !Navigator.prototype) return false;
+      const props = ['webdriver', 'plugins', 'languages', 'cookieEnabled'];
+      for (const prop of props) {
+        const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, prop);
+        if (desc && typeof desc.get === 'function') {
+          try {
+            desc.get.call({});
+            return true;
+          } catch (err) {
+            if (!(err instanceof TypeError)) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // workerProbe spawns an inline Web Worker via Blob to cross-validate
   // window-level telemetry against an isolated worker context.
   async function workerProbe(windowUA, windowPlatform, windowConcurrency, windowWebdriver) {
@@ -386,6 +431,8 @@
         workerPlatformMismatch: !!workerResult.workerPlatformMismatch,
         workerUserAgent: workerResult.workerUserAgent || '',
         workerPlatform: workerResult.workerPlatform || '',
+        proxyTrapDetected: testProxyTraps(),
+        nativeGetterTampered: testNativeGetters(),
       };
     } catch (e) {
       return null;
@@ -521,7 +568,7 @@
   ]);
 
   return {
-    schemaVersion: '0.4.0',
+    schemaVersion: '0.5.0',
     userAgent: navigator.userAgent || '',
     canvas,
     webgl: webglFingerprint(),

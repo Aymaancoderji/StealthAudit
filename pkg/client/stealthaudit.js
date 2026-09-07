@@ -24,6 +24,206 @@
     onChallenge: null,
   };
 
+  // Behavioral Dynamics Collector
+  const behavioral = {
+    mousePoints: [],
+    keyEvents: [],
+    scrollEvents: 0,
+    hasUntrustedEvents: false,
+    syntheticDetected: false,
+  };
+
+  function initBehavioralTracking() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const onMouseMove = (e) => {
+      if (e.isTrusted === false) behavioral.hasUntrustedEvents = true;
+      if (behavioral.mousePoints.length < 60) {
+        behavioral.mousePoints.push({
+          x: e.clientX,
+          y: e.clientY,
+          t: performance.now(),
+        });
+      }
+    };
+
+    const onKeyDown = (e) => {
+      if (e.isTrusted === false) behavioral.hasUntrustedEvents = true;
+      if (behavioral.keyEvents.length < 50) {
+        behavioral.keyEvents.push({
+          type: 'down',
+          key: e.key,
+          t: performance.now(),
+        });
+      }
+    };
+
+    const onKeyUp = (e) => {
+      if (e.isTrusted === false) behavioral.hasUntrustedEvents = true;
+      if (behavioral.keyEvents.length < 50) {
+        behavioral.keyEvents.push({
+          type: 'up',
+          key: e.key,
+          t: performance.now(),
+        });
+      }
+    };
+
+    const onScroll = (e) => {
+      if (e.isTrusted === false) behavioral.hasUntrustedEvents = true;
+      behavioral.scrollEvents++;
+    };
+
+    const onPointer = (e) => {
+      if (e.isTrusted === false) {
+        behavioral.hasUntrustedEvents = true;
+        behavioral.syntheticDetected = true;
+      }
+    };
+
+    try {
+      window.addEventListener('mousemove', onMouseMove, { passive: true });
+      window.addEventListener('keydown', onKeyDown, { passive: true });
+      window.addEventListener('keyup', onKeyUp, { passive: true });
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('pointerdown', onPointer, { passive: true });
+      window.addEventListener('click', onPointer, { passive: true });
+    } catch (err) {}
+  }
+
+  initBehavioralTracking();
+
+  function getBehavioralMetrics() {
+    const pts = behavioral.mousePoints;
+    let straightLineRatio = 0;
+    let trajectoryVariance = 0;
+
+    if (pts.length >= 2) {
+      let totalDistance = 0;
+      const speeds = [];
+      for (let i = 1; i < pts.length; i++) {
+        const dx = pts[i].x - pts[i - 1].x;
+        const dy = pts[i].y - pts[i - 1].y;
+        const dt = Math.max(1, pts[i].t - pts[i - 1].t);
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        totalDistance += dist;
+        speeds.push(dist / dt);
+      }
+      const netDx = pts[pts.length - 1].x - pts[0].x;
+      const netDy = pts[pts.length - 1].y - pts[0].y;
+      const netDistance = Math.sqrt(netDx * netDx + netDy * netDy);
+      if (totalDistance > 0) {
+        straightLineRatio = Number((netDistance / totalDistance).toFixed(4));
+      }
+      if (speeds.length > 1) {
+        const avgSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+        const sumSq = speeds.reduce((acc, s) => acc + Math.pow(s - avgSpeed, 2), 0);
+        trajectoryVariance = Number((sumSq / speeds.length).toFixed(4));
+      }
+    }
+
+    const keyFlightTimes = [];
+    const keys = behavioral.keyEvents.filter((k) => k.type === 'down');
+    for (let i = 1; i < keys.length; i++) {
+      keyFlightTimes.push(keys[i].t - keys[i - 1].t);
+    }
+    let keyFlightVariance = 0;
+    if (keyFlightTimes.length > 1) {
+      const avg = keyFlightTimes.reduce((a, b) => a + b, 0) / keyFlightTimes.length;
+      const sumSq = keyFlightTimes.reduce((acc, k) => acc + Math.pow(k - avg, 2), 0);
+      keyFlightVariance = Number((sumSq / keyFlightTimes.length).toFixed(4));
+    }
+
+    return {
+      mouseMovementCount: pts.length,
+      mouseTrajectoryVariance: trajectoryVariance,
+      mouseStraightLineRatio: straightLineRatio,
+      keyStrokeCount: keys.length,
+      keyFlightVariance: keyFlightVariance,
+      scrollEventCount: behavioral.scrollEvents,
+      hasUntrustedEvents: behavioral.hasUntrustedEvents,
+      syntheticEventDetected: behavioral.syntheticDetected,
+    };
+  }
+
+  // Dynamic Proof-of-Work Challenge Solver
+  async function solveProofOfWork(challenge) {
+    if (!challenge || !challenge.prefix || !challenge.difficulty) {
+      return null;
+    }
+    const { id, prefix, difficulty } = challenge;
+    const target = '0'.repeat(difficulty);
+
+    if (typeof Worker !== 'undefined' && typeof Blob !== 'undefined') {
+      try {
+        const workerScript = [
+          'self.onmessage = async function(e) {',
+          '  const { prefix, difficulty, target, maxIter } = e.data;',
+          '  const enc = new TextEncoder();',
+          '  for (let i = 0; i < maxIter; i++) {',
+          '    const nonce = String(i);',
+          '    const data = enc.encode(prefix + nonce);',
+          '    const buf = await crypto.subtle.digest("SHA-256", data);',
+          '    const arr = new Uint8Array(buf);',
+          '    let hex = "";',
+          '    for (let j = 0; j < Math.ceil(difficulty / 2); j++) {',
+          '      hex += arr[j].toString(16).padStart(2, "0");',
+          '    }',
+          '    if (hex.startsWith(target)) {',
+          '      self.postMessage({ nonce: nonce, found: true });',
+          '      return;',
+          '    }',
+          '  }',
+          '  self.postMessage({ found: false });',
+          '};',
+        ].join('\\n');
+
+        const blob = new Blob([workerScript], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(blob);
+        const worker = new Worker(workerUrl);
+
+        const sol = await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            try { worker.terminate(); } catch (e) {}
+            try { URL.revokeObjectURL(workerUrl); } catch (e) {}
+            resolve(null);
+          }, 5000);
+
+          worker.onmessage = (e) => {
+            clearTimeout(timeout);
+            try { worker.terminate(); } catch (e) {}
+            try { URL.revokeObjectURL(workerUrl); } catch (e) {}
+            if (e.data && e.data.found) {
+              resolve({ id: id, nonce: e.data.nonce });
+            } else {
+              resolve(null);
+            }
+          };
+          worker.postMessage({ prefix: prefix, difficulty: difficulty, target: target, maxIter: 1000000 });
+        });
+
+        if (sol) return sol;
+      } catch (err) {}
+    }
+
+    // Main thread fallback
+    const enc = new TextEncoder();
+    for (let i = 0; i < 500000; i++) {
+      const nonce = String(i);
+      const data = enc.encode(prefix + nonce);
+      const buf = await crypto.subtle.digest('SHA-256', data);
+      const arr = new Uint8Array(buf);
+      let hex = '';
+      for (let j = 0; j < Math.ceil(difficulty / 2); j++) {
+        hex += arr[j].toString(16).padStart(2, '0');
+      }
+      if (hex.startsWith(target)) {
+        return { id: id, nonce: nonce };
+      }
+    }
+    return null;
+  }
+
   async function sha256Hex(input) {
     try {
       const bytes = new TextEncoder().encode(input);
@@ -262,6 +462,51 @@
     }
   }
 
+  // testProxyTraps detects if core browser objects or their prototypes are wrapped in Proxy
+  function testProxyTraps() {
+    try {
+      if (typeof Proxy === 'undefined') return false;
+      const targets = [navigator, screen];
+      for (const t of targets) {
+        try {
+          const str = Object.prototype.toString.call(t);
+          if (!str.startsWith('[object ')) {
+            return true;
+          }
+        } catch (e) {
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // testNativeGetters validates that prototype getters enforce native receiver checks
+  function testNativeGetters() {
+    try {
+      if (typeof Navigator === 'undefined' || !Navigator.prototype) return false;
+      const props = ['webdriver', 'plugins', 'languages', 'cookieEnabled'];
+      for (const prop of props) {
+        const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, prop);
+        if (desc && typeof desc.get === 'function') {
+          try {
+            desc.get.call({});
+            return true;
+          } catch (err) {
+            if (!(err instanceof TypeError)) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function workerProbe(windowUA, windowPlatform, windowConcurrency, windowWebdriver) {
     try {
       if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') {
@@ -373,6 +618,8 @@
         workerPlatformMismatch: !!workerResult.workerPlatformMismatch,
         workerUserAgent: workerResult.workerUserAgent || '',
         workerPlatform: workerResult.workerPlatform || '',
+        proxyTrapDetected: testProxyTraps(),
+        nativeGetterTampered: testNativeGetters(),
       };
     } catch (e) {
       return null;
@@ -506,13 +753,14 @@
     ]);
 
     return {
-      schemaVersion: '0.4.0',
+      schemaVersion: '0.5.0',
       userAgent: navigator.userAgent || '',
       canvas,
       webgl: webglFingerprint(),
       audio,
       runtime,
       device,
+      behavioral: getBehavioralMetrics(),
     };
   }
 
@@ -530,7 +778,35 @@
       throw new Error(`StealthAudit telemetry submission failed: ${res.status}`);
     }
 
-    const data = await res.json();
+    let data = await res.json();
+
+    // If server issued a Proof-of-Work challenge, solve it silently in background!
+    if (data.decision === 'challenge' && data.challenge) {
+      if (typeof config.onChallenge === 'function') {
+        config.onChallenge(data.challenge);
+      }
+      const solution = await solveProofOfWork(data.challenge);
+      if (solution) {
+        const solveRes = await fetch(config.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fingerprint: fp,
+            challenge: data.challenge,
+            challengeSolution: solution,
+          }),
+        });
+        if (solveRes.ok) {
+          const solvedData = await solveRes.json();
+          if (solvedData.token) {
+            data = solvedData;
+          }
+        }
+      }
+    }
+
     cachedToken = data.token;
     cachedAssessment = data;
 
@@ -614,6 +890,14 @@
       }
       await this.execute();
       return cachedAssessment;
+    },
+
+    getBehavioral: function () {
+      return getBehavioralMetrics();
+    },
+
+    solveChallenge: async function (challenge) {
+      return solveProofOfWork(challenge);
     },
 
     protectForm: function (form) {

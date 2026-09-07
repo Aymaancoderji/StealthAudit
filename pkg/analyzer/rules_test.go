@@ -141,3 +141,52 @@ func TestClientHintsPlatformMatches(t *testing.T) {
 		}
 	}
 }
+
+func TestRuleScorerBehavioralAndProxyTraps(t *testing.T) {
+	scorer := RuleScorer{}
+	fp := &collector.Fingerprint{
+		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36",
+		Runtime: &collector.RuntimeFingerprint{
+			ProxyTrapDetected:    true,
+			NativeGetterTampered: true,
+			FunctionToStringOK:   true,
+			ToStringOfToStringOK: true,
+		},
+		Behavioral: &collector.BehavioralFingerprint{
+			HasUntrustedEvents:     true,
+			MouseMovementCount:     20,
+			MouseStraightLineRatio: 0.99,
+			KeyStrokeCount:         5,
+			KeyFlightVariance:      0.5,
+		},
+	}
+
+	rep, err := scorer.Score(Input{Fingerprint: fp})
+	if err != nil {
+		t.Fatalf("Score failed: %v", err)
+	}
+
+	hasCode := func(code string) bool {
+		for _, f := range rep.Flags {
+			if f.Code == code {
+				return true
+			}
+		}
+		return false
+	}
+
+	expected := []string{
+		"proxy_trap_detected",
+		"native_getter_tampered",
+		"untrusted_synthetic_events",
+		"linear_mouse_trajectory",
+		"mechanical_keystroke_timing",
+	}
+
+	for _, code := range expected {
+		if !hasCode(code) {
+			t.Errorf("expected flag %s, but missing in %v", code, rep.Flags)
+		}
+	}
+}
+

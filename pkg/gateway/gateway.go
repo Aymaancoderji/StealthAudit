@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Aymaancoderji/StealthAudit/pkg/analyzer"
+	"github.com/Aymaancoderji/StealthAudit/pkg/challenge"
 	"github.com/Aymaancoderji/StealthAudit/pkg/client"
 	"github.com/Aymaancoderji/StealthAudit/pkg/collector"
 	"github.com/Aymaancoderji/StealthAudit/pkg/mlmodel"
@@ -18,31 +19,34 @@ import (
 
 // Config configures the Ingestion and Scoring Gateway.
 type Config struct {
-	SecretKey          []byte
-	MinAllowScore      float64
-	MaxAllowBotProb    float64
-	TokenTTL           time.Duration
-	NetCaptureProvider func() *network.Capture
-	Scorer             analyzer.Scorer
+	SecretKey           []byte
+	MinAllowScore       float64
+	MaxAllowBotProb     float64
+	TokenTTL            time.Duration
+	ChallengeDifficulty int
+	NetCaptureProvider  func() *network.Capture
+	Scorer              analyzer.Scorer
 }
 
 // DefaultConfig returns standard gateway defaults.
 func DefaultConfig(secretKey []byte) Config {
 	return Config{
-		SecretKey:       secretKey,
-		MinAllowScore:   40.0,
-		MaxAllowBotProb: 0.85,
-		TokenTTL:        120 * time.Second,
-		Scorer:          analyzer.RuleScorer{},
+		SecretKey:           secretKey,
+		MinAllowScore:       40.0,
+		MaxAllowBotProb:     0.85,
+		TokenTTL:            120 * time.Second,
+		ChallengeDifficulty: 3,
+		Scorer:              analyzer.RuleScorer{},
 	}
 }
 
 // Gateway handles in-browser telemetry ingestion, scoring, and token issuance.
 type Gateway struct {
-	cfg      Config
-	signer   *token.Signer
-	verifier *token.Verifier
-	mux      *http.ServeMux
+	cfg          Config
+	signer       *token.Signer
+	verifier     *token.Verifier
+	challengeMgr *challenge.Manager
+	mux          *http.ServeMux
 
 	mu       sync.Mutex
 	demoLogs []map[string]any
@@ -50,18 +54,22 @@ type Gateway struct {
 
 // TelemetryRequest is the payload sent from stealthaudit.js.
 type TelemetryRequest struct {
-	Fingerprint *collector.Fingerprint `json:"fingerprint"`
+	Fingerprint       *collector.Fingerprint `json:"fingerprint"`
+	Challenge         *challenge.Challenge   `json:"challenge,omitempty"`
+	ChallengeSolution *challenge.Solution    `json:"challengeSolution,omitempty"`
 }
 
 // TelemetryResponse is returned to the client SDK with the assessment token.
 type TelemetryResponse struct {
-	Token          string         `json:"token"`
-	Decision       token.Decision `json:"decision"`
-	Score          float64        `json:"score"`
-	BotProbability float64        `json:"botProbability"`
-	Verdict        string         `json:"verdict"`
-	VisitorID      string         `json:"visitorId"`
-	Flags          []string       `json:"flags,omitempty"`
+	Token             string               `json:"token"`
+	Decision          token.Decision       `json:"decision"`
+	Score             float64              `json:"score"`
+	BotProbability    float64              `json:"botProbability"`
+	Verdict           string               `json:"verdict"`
+	VisitorID         string               `json:"visitorId"`
+	Flags             []string             `json:"flags,omitempty"`
+	Challenge         *challenge.Challenge `json:"challenge,omitempty"`
+	ChallengeVerified bool                 `json:"challengeVerified,omitempty"`
 }
 
 // VerifyRequest is submitted by customer backend APIs verifying a token.
@@ -98,12 +106,18 @@ func New(cfg Config) (*Gateway, error) {
 		return nil, fmt.Errorf("initializing token verifier: %w", err)
 	}
 
+	challengeMgr, err := challenge.NewManager(cfg.SecretKey, 60*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("initializing challenge manager: %w", err)
+	}
+
 	gw := &Gateway{
-		cfg:      cfg,
-		signer:   signer,
-		verifier: verifier,
-		mux:      http.NewServeMux(),
-		demoLogs: make([]map[string]any, 0),
+		cfg:          cfg,
+		signer:       signer,
+		verifier:     verifier,
+		challengeMgr: challengeMgr,
+		mux:          http.NewServeMux(),
+		demoLogs:     make([]map[string]any, 0),
 	}
 
 	gw.routes()
@@ -120,6 +134,11 @@ func (g *Gateway) Verifier() *token.Verifier {
 	return g.verifier
 }
 
+// ChallengeManager returns the gateway's challenge manager.
+func (g *Gateway) ChallengeManager() *challenge.Manager {
+	return g.challengeMgr
+}
+
 func (g *Gateway) routes() {
 	// 1. Client SDK bundle
 	g.mux.Handle("/stealthaudit.js", client.Handler())
@@ -130,7 +149,10 @@ func (g *Gateway) routes() {
 	// 3. Token verification API
 	g.mux.HandleFunc("/v1/verify", g.handleVerify)
 
-	// 4. Healthcheck
+	// 4. Dynamic Proof-of-Work challenge API
+	g.mux.HandleFunc("/v1/challenge", g.handleChallenge)
+
+	// 5. Healthcheck
 	g.mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -139,7 +161,7 @@ func (g *Gateway) routes() {
 		})
 	})
 
-	// 5. Interactive Demo Page & Protected Form
+	// 6. Interactive Demo Page & Protected Form
 	g.mux.HandleFunc("/", g.handleDemo)
 	g.mux.HandleFunc("/api/demo-action", g.handleDemoAction)
 }
@@ -190,26 +212,50 @@ func (g *Gateway) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 
 	if req.Fingerprint.Runtime != nil {
 		rt := req.Fingerprint.Runtime
-		if rt.WebdriverFlag || len(rt.AutomationArtifacts) > 0 || rt.WorkerWebdriverLeak || rt.ErrorStackAutomationLeak {
+		if rt.WebdriverFlag || len(rt.AutomationArtifacts) > 0 || rt.WorkerWebdriverLeak || rt.ErrorStackAutomationLeak || rt.ProxyTrapDetected {
+			isHardAutomation = true
+		}
+	}
+	if req.Fingerprint.Behavioral != nil {
+		if req.Fingerprint.Behavioral.HasUntrustedEvents {
 			isHardAutomation = true
 		}
 	}
 
+	var issuedChallenge *challenge.Challenge
+	challengeVerified := false
+
 	if isHardAutomation || mlResult.Probability >= g.cfg.MaxAllowBotProb {
 		decision = token.DecisionBlock
 	} else if mlResult.Probability >= 0.40 || (g.cfg.MinAllowScore > 0 && analysis.StealthScore < g.cfg.MinAllowScore) {
-		decision = token.DecisionChallenge
+		// If client provided a valid challenge solution, upgrade challenge to allow!
+		if req.Challenge != nil && req.ChallengeSolution != nil {
+			valid, err := g.challengeMgr.Verify(req.Challenge, req.ChallengeSolution)
+			if err == nil && valid {
+				decision = token.DecisionAllow
+				challengeVerified = true
+			} else {
+				decision = token.DecisionChallenge
+				ch, _ := g.challengeMgr.CreateChallenge(g.cfg.ChallengeDifficulty)
+				issuedChallenge = ch
+			}
+		} else {
+			decision = token.DecisionChallenge
+			ch, _ := g.challengeMgr.CreateChallenge(g.cfg.ChallengeDifficulty)
+			issuedChallenge = ch
+		}
 	}
 
 	now := time.Now()
 	claims := token.Claims{
-		VisitorID:      visitorID,
-		Score:          analysis.StealthScore,
-		BotProbability: mlResult.Probability,
-		Decision:       decision,
-		Flags:          flagCodes,
-		IssuedAt:       now.Unix(),
-		ExpiresAt:      now.Add(g.cfg.TokenTTL).Unix(),
+		VisitorID:         visitorID,
+		Score:             analysis.StealthScore,
+		BotProbability:    mlResult.Probability,
+		Decision:          decision,
+		Flags:             flagCodes,
+		ChallengeVerified: challengeVerified,
+		IssuedAt:          now.Unix(),
+		ExpiresAt:         now.Add(g.cfg.TokenTTL).Unix(),
 	}
 
 	signedToken, err := g.signer.IssueToken(claims)
@@ -219,13 +265,15 @@ func (g *Gateway) handleTelemetry(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := TelemetryResponse{
-		Token:          signedToken,
-		Decision:       decision,
-		Score:          analysis.StealthScore,
-		BotProbability: mlResult.Probability,
-		Verdict:        mlResult.Verdict,
-		VisitorID:      visitorID,
-		Flags:          flagCodes,
+		Token:             signedToken,
+		Decision:          decision,
+		Score:             analysis.StealthScore,
+		BotProbability:    mlResult.Probability,
+		Verdict:           mlResult.Verdict,
+		VisitorID:         visitorID,
+		Flags:             flagCodes,
+		Challenge:         issuedChallenge,
+		ChallengeVerified: challengeVerified,
 	}
 
 	// Record for demo log
@@ -274,6 +322,45 @@ func (g *Gateway) handleVerify(w http.ResponseWriter, r *http.Request) {
 		Valid:  true,
 		Claims: claims,
 	})
+}
+
+func (g *Gateway) handleChallenge(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodGet {
+		ch, err := g.challengeMgr.CreateChallenge(g.cfg.ChallengeDifficulty)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(ch)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var req struct {
+			Challenge *challenge.Challenge `json:"challenge"`
+			Solution  *challenge.Solution  `json:"solution"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		valid, err := g.challengeMgr.Verify(req.Challenge, req.Solution)
+		if err != nil || !valid {
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"valid": false,
+				"error": "challenge verification failed",
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"valid":    true,
+			"verified": true,
+		})
+		return
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (g *Gateway) handleDemo(w http.ResponseWriter, r *http.Request) {
@@ -449,7 +536,39 @@ var demoTemplate = template.Must(template.New("demo").Parse(`<!DOCTYPE html>
     </div>
 
     <div class="card">
-      <h2>2. Test Protected API Endpoint</h2>
+      <h2>2. Behavioral Biometrics & Kinematics</h2>
+      <p style="font-size:0.9rem;margin-bottom:1rem;">Real humans exhibit non-linear cursor curvature and variable keystroke flight times. Automated bots teleport or follow rigid linear paths.</p>
+      <div class="grid">
+        <div class="stat-box">
+          <div class="stat-label">Mouse Movements</div>
+          <div id="statMouseCount" class="stat-val">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Straight-Line Ratio</div>
+          <div id="statStraightRatio" class="stat-val">0.00</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Keystroke Flight Variance</div>
+          <div id="statKeyVariance" class="stat-val">0.00 ms</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Event Integrity</div>
+          <div id="statEventTrust" class="stat-val" style="color:var(--green);">Trusted</div>
+        </div>
+      </div>
+      <input type="text" id="demoInput" placeholder="Type inside this box to test keystroke flight variance..." style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text-bright);font-size:0.9rem;">
+    </div>
+
+    <div class="card">
+      <h2>3. Dynamic Proof-of-Work (PoW) Challenge Engine</h2>
+      <p style="font-size:0.9rem;margin-bottom:1rem;">When traffic is suspicious, the gateway issues a cryptographic puzzle solved silently by a background Web Worker.</p>
+      <div id="powStatus" style="font-size:0.9rem;color:#8b949e;margin-bottom:1rem;">Worker Solver: <strong style="color:var(--green);">Active & Ready</strong></div>
+      <button onclick="testPoWChallenge()" style="background:#1f6feb;">Solve Test Challenge (Web Worker)</button>
+      <div id="powResult" class="result-box"></div>
+    </div>
+
+    <div class="card">
+      <h2>4. Test Protected API Endpoint</h2>
       <p style="font-size:0.9rem;margin-bottom:1rem;">Submit a request to <code>POST /api/demo-action</code>. The server-side middleware will verify the token's cryptographic signature and bot score before allowing access.</p>
       <button id="testBtn" onclick="submitProtectedAction()">Submit Protected Request</button>
       <div id="actionResult" class="result-box"></div>
@@ -469,6 +588,66 @@ var demoTemplate = template.Must(template.New("demo").Parse(`<!DOCTYPE html>
       document.getElementById('statVisitorId').textContent = data.visitorId.substring(0, 12) + '...';
       document.getElementById('tokenDisplay').textContent = data.token;
     });
+
+    setInterval(() => {
+      if (window.StealthAudit && window.StealthAudit.getBehavioral) {
+        const beh = window.StealthAudit.getBehavioral();
+        document.getElementById('statMouseCount').textContent = beh.mouseMovementCount;
+        document.getElementById('statStraightRatio').textContent = beh.mouseStraightLineRatio.toFixed(2);
+        document.getElementById('statKeyVariance').textContent = beh.keyFlightVariance.toFixed(2) + ' ms';
+        const trustEl = document.getElementById('statEventTrust');
+        if (beh.hasUntrustedEvents) {
+          trustEl.textContent = 'Untrusted';
+          trustEl.style.color = 'var(--red)';
+        } else {
+          trustEl.textContent = 'Trusted';
+          trustEl.style.color = 'var(--green)';
+        }
+      }
+    }, 250);
+
+    async function testPoWChallenge() {
+      const resBox = document.getElementById('powResult');
+      resBox.style.display = 'block';
+      resBox.style.background = 'var(--surface)';
+      resBox.style.border = '1px solid var(--border)';
+      resBox.style.color = 'var(--text-bright)';
+      resBox.textContent = 'Requesting challenge from gateway...';
+
+      try {
+        const start = performance.now();
+        const chRes = await fetch('/v1/challenge');
+        const ch = await chRes.json();
+        resBox.textContent = 'Solving Proof-of-Work challenge in Web Worker (Difficulty: ' + ch.difficulty + ')...';
+        const sol = await window.StealthAudit.solveChallenge(ch);
+        const elapsed = (performance.now() - start).toFixed(0);
+
+        if (!sol) {
+          throw new Error('Solver returned empty solution');
+        }
+
+        const verifyRes = await fetch('/v1/challenge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ challenge: ch, solution: sol })
+        });
+        const vData = await verifyRes.json();
+
+        if (verifyRes.ok && vData.valid) {
+          resBox.style.background = 'rgba(63, 185, 80, 0.15)';
+          resBox.style.border = '1px solid var(--green)';
+          resBox.textContent = 'Challenge verified! Solved in ' + elapsed + 'ms via Web Worker. Nonce: ' + sol.nonce;
+        } else {
+          resBox.style.background = 'rgba(248, 81, 73, 0.15)';
+          resBox.style.border = '1px solid var(--red)';
+          resBox.textContent = 'Challenge verification failed: ' + JSON.stringify(vData);
+        }
+      } catch (err) {
+        resBox.style.background = 'rgba(248, 81, 73, 0.15)';
+        resBox.style.border = '1px solid var(--red)';
+        resBox.textContent = 'Error: ' + err.message;
+      }
+    }
 
     async function submitProtectedAction() {
       const btn = document.getElementById('testBtn');

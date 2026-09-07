@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Aymaancoderji/StealthAudit/pkg/challenge"
 	"github.com/Aymaancoderji/StealthAudit/pkg/collector"
 	"github.com/Aymaancoderji/StealthAudit/pkg/token"
 )
@@ -158,3 +159,120 @@ func TestGatewayEndpoints(t *testing.T) {
 		t.Errorf("demo-action with bot token = %d, want 403", recBotAction.Code)
 	}
 }
+
+func TestGatewayProofOfWorkChallenge(t *testing.T) {
+	secret := []byte("test-gateway-secret-32bytes-123456")
+	cfg := DefaultConfig(secret)
+	cfg.ChallengeDifficulty = 2 // Fast for testing
+	cfg.MinAllowScore = 95.0    // Threshold above humanFP without TLS (~87.5) to trigger challenge
+
+	gw, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New gateway: %v", err)
+	}
+
+	handler := gw.Handler()
+
+	// Fingerprint with score ~87.5 (below 95.0 threshold -> DecisionChallenge)
+	borderlineFP := &collector.Fingerprint{
+		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36",
+		Canvas:    &collector.CanvasFingerprint{Hash: "canvas_hash_123"},
+		WebGL: &collector.WebGLFingerprint{
+			UnmaskedVendor:   "NVIDIA",
+			UnmaskedRenderer: "NVIDIA GeForce RTX 3080",
+			WebGL2Supported:  true,
+		},
+		Audio: &collector.AudioFingerprint{Hash: "audio_hash_123"},
+		Runtime: &collector.RuntimeFingerprint{
+			WebdriverFlag:        false,
+			FunctionToStringOK:   true,
+			ToStringOfToStringOK: true,
+			HasChromeRuntime:     true,
+			WorkerSupport:        true,
+			WorkerExecutionOK:    true,
+		},
+		Device: &collector.DeviceFingerprint{
+			ScreenWidth:         1920,
+			ScreenHeight:        1080,
+			HardwareConcurrency: 8,
+			DeviceMemory:        16,
+			Fonts:               []string{"Arial", "Helvetica", "Times New Roman"},
+			SpeechVoiceCount:    10,
+			UserAgentData: &collector.UserAgentDataFingerprint{
+				Platform: "Windows",
+			},
+		},
+	}
+
+	body, _ := json.Marshal(TelemetryRequest{Fingerprint: borderlineFP})
+	req := httptest.NewRequest("POST", "/v1/telemetry", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+
+	var resp TelemetryResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if resp.Decision != token.DecisionChallenge {
+		t.Fatalf("expected decision 'challenge', got %s", resp.Decision)
+	}
+	if resp.Challenge == nil {
+		t.Fatalf("expected challenge object in response, got nil")
+	}
+
+	// Solve the challenge
+	nonce, ok := challenge.Solve(resp.Challenge.Prefix, resp.Challenge.Difficulty, 100000)
+	if !ok {
+		t.Fatalf("failed to solve challenge")
+	}
+
+	// Resubmit with solution
+	solveReq := TelemetryRequest{
+		Fingerprint: borderlineFP,
+		Challenge:   resp.Challenge,
+		ChallengeSolution: &challenge.Solution{
+			ID:    resp.Challenge.ID,
+			Nonce: nonce,
+		},
+	}
+	solveBody, _ := json.Marshal(solveReq)
+	req2 := httptest.NewRequest("POST", "/v1/telemetry", bytes.NewReader(solveBody))
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	var resp2 TelemetryResponse
+	if err := json.NewDecoder(rec2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("decode solved response: %v", err)
+	}
+
+	if resp2.Decision != token.DecisionAllow {
+		t.Errorf("expected decision 'allow' after solving challenge, got %s", resp2.Decision)
+	}
+	if !resp2.ChallengeVerified {
+		t.Errorf("expected ChallengeVerified = true")
+	}
+
+	// Test ProxyTrap hard automation block
+	proxyFP := &collector.Fingerprint{
+		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+		Runtime: &collector.RuntimeFingerprint{
+			ProxyTrapDetected: true,
+		},
+	}
+	proxyBody, _ := json.Marshal(TelemetryRequest{Fingerprint: proxyFP})
+	reqProxy := httptest.NewRequest("POST", "/v1/telemetry", bytes.NewReader(proxyBody))
+	recProxy := httptest.NewRecorder()
+	handler.ServeHTTP(recProxy, reqProxy)
+
+	var respProxy TelemetryResponse
+	_ = json.NewDecoder(recProxy.Body).Decode(&respProxy)
+	if respProxy.Decision != token.DecisionBlock {
+		t.Errorf("expected block on proxy trap, got %s", respProxy.Decision)
+	}
+}
+

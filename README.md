@@ -21,6 +21,7 @@ untested but wired up, Firefox/WebKit). No automated test suite yet.
 ```
 cmd/stealthaudit/     CLI entrypoint (run, leaktest, compare, serve, gateway, list-drivers)
 pkg/client/            Standalone browser SDK (stealthaudit.js) for live website deployment
+pkg/challenge/         Dynamic Proof-of-Work challenge generation and verification engine
 pkg/gateway/           Real-time telemetry ingestion, scoring, and token issuance server
 pkg/token/             Cryptographic SAT token issuance and verification (HMAC-SHA256)
 pkg/middleware/        Drop-in server-side HTTP middleware for protecting API endpoints
@@ -189,6 +190,21 @@ Runs StealthAudit as an in-line telemetry evaluation & token issuance gateway:
   ```
 - **Remote Verification Endpoint (`POST /v1/verify`)**: Allows backend services to verify token validity over HTTP.
 - **Live Demo Page (`GET /demo` / `GET /`)**: Interactive web console testing live client fingerprinting and protected action submission against bot detection policies.
+
+### Behavioral Biometrics, Dynamic Proof-of-Work (PoW), and Prototype Traps
+
+- **Behavioral Kinematics (`pkg/client/stealthaudit.js`)**: Non-intrusively tracks client interaction entropy before form submission:
+  - *Pointer Kinematics*: Measures trajectory curvature, velocity variance, and straight-line ratios (distinguishing human Bézier curves from automated linear teleportation).
+  - *Keystroke Dynamics*: Analyzes inter-keystroke flight times and duration variance to detect artificial typing loops.
+  - *Event Integrity*: Checks `event.isTrusted` and dispatch anomalies for synthetic programmatic events.
+- **Dynamic Proof-of-Work (PoW) Engine (`pkg/challenge`)**:
+  - Eliminates false positives without disruptive CAPTCHAs.
+  - Gateway returns an HMAC-signed cryptographic puzzle when traffic is borderline (`0.4 <= P(bot) < 0.85` or low stealth score).
+  - The browser SDK spawns a background Web Worker to solve the challenge in 50–150ms and resubmits to obtain an upgraded verified assessment token.
+  - Throttles large-scale scraping campaigns by exponentially multiplying their CPU costs.
+- **Advanced Prototype & Proxy Traps (`pkg/collector/audit.js`)**:
+  - Detects `Proxy` wrapper shims on core APIs (`window.navigator`, `window.screen`).
+  - Verifies native prototype getter invariants by invoking them with invalid `this` receivers, ensuring the V8/WebKit engine `TypeError: Illegal invocation` format is enforced rather than a mock function.
 
 ## Known gaps
 
