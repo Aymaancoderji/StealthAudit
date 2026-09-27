@@ -1,0 +1,34 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/stealthaudit.js", "destination": "/stealthaudit.js" },
+    { "source": "/gateway", "destination": "/gateway.html" },
+    { "source": "/demo", "destination": "/gateway.html" },
+    { "source": "/report", "destination": "/report.html" },
+    { "source": "/compare", "destination": "/compare.html" },
+    { "source": "/healthz", "destination": "/api/healthz" },
+    { "source": "/v1/telemetry", "destination": "/api/v1/telemetry" },
+    { "source": "/v1/verify", "destination": "/api/v1/verify" },
+    { "source": "/v1/challenge", "destination": "/api/v1/challenge" },
+    { "source": "/api/demo-action", "destination": "/api/demo-action" },
+    { "source": "/api/collect", "destination": "/api/collect" },
+    { "source": "/api/report", "destination": "/api/report" }
+  ],
+  "headers": [
+    {
+      "source": "/stealthaudit.js",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/v1/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, X-StealthAudit-Token" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" }
+      ]
+    }
+  ]
+}

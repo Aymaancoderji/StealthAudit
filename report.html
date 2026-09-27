@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StealthAudit — Audit Report Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>">
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface-hover: #1c2128;
+    --border: #30363d; --text: #c9d1d9; --text-bright: #f0f6fc;
+    --muted: #8b949e; --accent: #58a6ff; --accent-soft: rgba(56, 139, 253, 0.15);
+    --green: #3fb950; --green-soft: rgba(63, 185, 80, 0.15);
+    --amber: #d29922; --amber-soft: rgba(210, 153, 34, 0.15);
+    --red: #f85149; --red-soft: rgba(248, 81, 73, 0.15);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55; min-height: 100vh;
+  }
+  
+  /* Shared Nav */
+  .sa-nav {
+    background: rgba(22, 27, 34, 0.85); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
+  }
+  .sa-nav-container {
+    max-width: 1100px; margin: 0 auto; padding: 0.85rem 1.5rem;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;
+  }
+  .sa-brand {
+    display: inline-flex; align-items: center; gap: 0.6rem;
+    text-decoration: none; color: var(--text-bright); font-weight: 700; font-size: 1.15rem;
+  }
+  .sa-dot { width: 10px; height: 10px; border-radius: 50%; background: #2f81f7; box-shadow: 0 0 10px #2f81f7; }
+  .sa-badge {
+    font-size: 0.72rem; padding: 2px 7px; border-radius: 9999px;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(56,139,253,0.3);
+  }
+  .sa-links { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+  .sa-link {
+    color: var(--muted); text-decoration: none; font-size: 0.88rem; font-weight: 500;
+    padding: 0.4rem 0.85rem; border-radius: 6px; transition: all 0.2s ease;
+  }
+  .sa-link:hover { color: var(--text-bright); background: var(--surface-hover); }
+  .sa-link.active { color: #fff; background: #1f6feb; }
+  .sa-link.sa-gh-link { color: #8b949e; border: 1px solid var(--border); margin-left: 0.4rem; }
+  .sa-link.sa-gh-link:hover { color: var(--text-bright); border-color: var(--muted); }
+
+  main { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem 5rem; }
+
+  .selector-bar {
+    display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem;
+    background: var(--surface); padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border);
+  }
+  .tab-btn {
+    background: transparent; color: var(--muted); border: none; padding: 7px 14px;
+    border-radius: 6px; font-weight: 600; font-size: 0.86rem; cursor: pointer;
+  }
+  .tab-btn:hover { color: var(--text-bright); background: var(--surface-hover); }
+  .tab-btn.active { color: #fff; background: #1f6feb; }
+  .upload-btn {
+    margin-left: auto; background: var(--surface-hover); color: var(--text-bright);
+    border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px;
+    font-size: 0.82rem; cursor: pointer; font-weight: 500;
+  }
+
+  h1 { font-size: 1.7rem; margin: 0 0 .25rem; color: #f0f6fc; font-weight: 800; }
+  .sub { color: var(--muted); font-size: .88rem; margin-bottom: 1.5rem; word-break: break-all; }
+  
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  .card h2 { margin: 0 0 1rem; font-size: 0.95rem; color: #f0f6fc; text-transform: uppercase; letter-spacing: .05em; }
+
+  .score-row { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.5rem; }
+  .score-big { font-size: 3.2rem; font-weight: 800; }
+  .score-big .of100 { font-size: 1.3rem; color: var(--muted); font-weight: 400; }
+
+  .bars { display: grid; gap: 0.85rem; }
+  .bar-row { display: grid; grid-template-columns: 220px 1fr 3.5rem; align-items: center; gap: 1rem; }
+  .bar-label { color: var(--muted); font-size: .86rem; font-weight: 500; }
+  .bar-track { background: #21262d; border-radius: 6px; height: 10px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 6px; }
+  .bar-val { text-align: right; font-variant-numeric: tabular-nums; font-size: .88rem; font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: .65rem .75rem; border-bottom: 1px solid #21262d; font-size: .86rem; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: none; }
+  .sev { display: inline-block; min-width: 1.5rem; text-align: center; border-radius: 4px; padding: 2px 6px; font-weight: 700; font-size: .75rem; }
+  .flag-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; color: #f0f6fc; }
+  .empty { color: var(--muted); font-style: italic; }
+
+  .ml-banner {
+    display: flex; align-items: center; gap: 1.25rem; border-radius: 12px;
+    padding: 1.1rem 1.4rem; margin-bottom: 1.5rem; font-weight: 600;
+  }
+  .ml-banner .prob { font-size: 2rem; font-weight: 800; }
+  .ml-banner .sub-text { font-weight: 400; color: var(--muted); font-size: .86rem; margin-top: 0.2rem; }
+
+  details.raw { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-top: 1.5rem; }
+  details.raw summary { cursor: pointer; color: var(--accent); font-size: .9rem; font-weight: 600; outline: none; }
+  details.raw pre { margin-top: 1rem; background: #010409; color: #79c0ff; padding: 1rem; border-radius: 8px; overflow: auto; font-size: .78rem; max-height: 400px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body>
+
+<nav class="sa-nav">
+  <div class="sa-nav-container">
+    <a href="/" class="sa-brand">
+      <span class="sa-dot"></span>
+      <span class="sa-title">StealthAudit</span>
+      <span class="sa-badge">v0.5.0</span>
+    </a>
+    <div class="sa-links">
+      <a href="/" class="sa-link">Live Audit</a>
+      <a href="/gateway" class="sa-link">Gateway & Biometrics</a>
+      <a href="/report" class="sa-link active">Report Dashboard</a>
+      <a href="/compare" class="sa-link">Compare Diff</a>
+      <a href="/stealthaudit.js" class="sa-link" target="_blank">Client SDK</a>
+      <a href="https://github.com/Aymaancoderji/StealthAudit" target="_blank" class="sa-link sa-gh-link">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <div class="selector-bar">
+    <button class="tab-btn active" onclick="switchPreset('live')">⚡ Live Browser Audit</button>
+    <button class="tab-btn" onclick="switchPreset('genuine')">🌟 Genuine Chrome 128</button>
+    <button class="tab-btn" onclick="switchPreset('playwright')">🤖 Headless Playwright</button>
+    <button class="tab-btn" onclick="switchPreset('stealth')">🛡️ Puppeteer Stealth Plugin</button>
+    <label class="upload-btn">
+      📁 Upload report.json
+      <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileUpload(event)">
+    </label>
+  </div>
+
+  <div id="reportContent">
+    <div style="text-align:center;padding:4rem 1rem;color:var(--muted);">Loading report data...</div>
+  </div>
+</main>
+
+<script>
+const PRESETS = {
+  genuine: {
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    generatedAt: "2026-09-27T18:00:00Z",
+    stealthScore: 98.4,
+    categoryScores: {
+      js_runtime_integrity: 100.0,
+      hardware_consistency: 93.8,
+      tls_network_alignment: 100.0,
+      session_isolation: 100.0,
+    },
+    ml: {
+      probability: 0.012,
+      verdict: "likely_genuine",
+      contributions: [
+        { feature: "hardware_concurrency_norm", impact: -1.05 },
+        { feature: "font_count_norm", impact: -1.41 },
+        { feature: "webdriver_flag", impact: 0 },
+      ]
+    },
+    flags: [],
+    details: {
+      gpu: "NVIDIA GeForce RTX 3080",
+      screen: "1920x1080 (24-bit)",
+      cores: 16,
+      memory: "8 GB",
+      fonts: 28,
+      webgl2: true,
+      webgpu: true,
+      ja3: "771,4865-4866-4867-49195-49199,0-23-65281-10-11-35-16,29-23-24,0",
+      http2: ":method :authority :scheme :path"
+    }
+  },
+  playwright: {
+    userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/128.0.0.0 Safari/537.36",
+    generatedAt: "2026-09-27T18:05:00Z",
+    stealthScore: 34.0,
+    categoryScores: {
+      js_runtime_integrity: 20.0,
+      hardware_consistency: 16.0,
+      tls_network_alignment: 0.0,
+      session_isolation: 100.0,
+    },
+    ml: {
+      probability: 0.998,
+      verdict: "likely_automated",
+      contributions: [
+        { feature: "webdriver_flag", impact: 2.75 },
+        { feature: "software_gpu_renderer", impact: 2.15 },
+        { feature: "headless_screen_geometry", impact: 1.65 },
+        { feature: "cdp_runtime_domain_suspected", impact: 0.88 },
+      ]
+    },
+    flags: [
+      { category: "js_runtime_integrity", code: "webdriver_flag_true", severity: 5, description: "navigator.webdriver is true, an unambiguous automation signal" },
+      { category: "js_runtime_integrity", code: "cdp_runtime_domain_suspected", severity: 3, description: "Chrome DevTools Protocol Runtime domain preview timing detected" },
+      { category: "hardware_consistency", code: "software_gpu_renderer", severity: 5, description: "WebGL reports SwiftShader software rasterizer instead of real GPU" },
+      { category: "hardware_consistency", code: "headless_screen_geometry", severity: 4, description: "outerWidth/outerHeight are 0, characteristic of headless window" },
+      { category: "tls_network_alignment", code: "http2_not_negotiated", severity: 3, description: "Browser did not negotiate HTTP/2 over TLS" },
+    ],
+    details: {
+      gpu: "Google SwiftShader (LLVM 10.0)",
+      screen: "800x600 (outer: 0x0)",
+      cores: 1,
+      memory: "unavailable",
+      fonts: 1,
+      webgl2: false,
+      webgpu: false,
+      ja3: "missing",
+      http2: "none"
+    }
+  },
+  stealth: {
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    generatedAt: "2026-09-27T18:10:00Z",
+    stealthScore: 58.5,
+    categoryScores: {
+      js_runtime_integrity: 45.0,
+      hardware_consistency: 89.0,
+      tls_network_alignment: 0.0,
+      session_isolation: 100.0,
+    },
+    ml: {
+      probability: 0.885,
+      verdict: "likely_automated",
+      contributions: [
+        { feature: "worker_context_leak", impact: 1.34 },
+        { feature: "error_stack_automation_leak", impact: 1.03 },
+        { feature: "function_tostring_tampered", impact: 0.49 },
+      ]
+    },
+    flags: [
+      { category: "js_runtime_integrity", code: "worker_webdriver_leak", severity: 5, description: "navigator.webdriver is true in isolated Web Worker despite being masked on window" },
+      { category: "js_runtime_integrity", code: "chrome_object_shape_incomplete", severity: 3, description: "window.chrome is present but missing loadTimes/csi shims" },
+      { category: "js_runtime_integrity", code: "function_tostring_tampered", severity: 4, description: "Function.prototype.toString has been overridden to hide shims" },
+      { category: "tls_network_alignment", code: "http2_not_negotiated", severity: 3, description: "Browser did not negotiate HTTP/2 over TLS" },
+    ],
+    details: {
+      gpu: "Intel(R) Iris(R) Xe Graphics",
+      screen: "1920x1080 (24-bit)",
+      cores: 8,
+      memory: "8 GB",
+      fonts: 18,
+      webgl2: true,
+      webgpu: false,
+      ja3: "missing",
+      http2: "none"
+    }
+  }
+};
+
+const scoreColor = (s) => s >= 80 ? 'var(--green)' : s >= 50 ? 'var(--amber)' : 'var(--red)';
+const sevColor = (s) => s >= 4 ? 'var(--red)' : s >= 2 ? 'var(--amber)' : 'var(--green)';
+const esc = (s) => (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function renderReport(r) {
+  const cat = r.categoryScores || {};
+  const ml = r.ml || {};
+  const flags = r.flags || [];
+  const pct = Math.round((ml.probability || 0) * 100);
+  const verdictCls = ml.verdict === 'likely_automated' ? 'red' : (ml.verdict === 'likely_genuine' ? 'green' : 'amber');
+
+  let html = `
+    <h1>StealthAudit Report</h1>
+    <div class="sub">${esc(r.userAgent)} &middot; generated ${r.generatedAt || 'just now'}</div>
+
+    <div class="ml-banner" style="background:${verdictCls === 'red' ? 'rgba(248,81,73,0.15)' : (verdictCls === 'green' ? 'rgba(63,185,80,0.15)' : 'rgba(210,153,34,0.15)')}; color:${verdictCls === 'red' ? 'var(--red)' : (verdictCls === 'green' ? 'var(--green)' : 'var(--amber)')}; border:1px solid ${verdictCls === 'red' ? 'rgba(248,81,73,0.3)' : (verdictCls === 'green' ? 'rgba(63,185,80,0.3)' : 'rgba(210,153,34,0.3)')}">
+      <span class="prob">${pct}%</span>
+      <div>
+        <div style="font-size:1.05rem;">ML Automation Probability: ${ml.verdict ? ml.verdict.replace('_', ' ').toUpperCase() : 'UNKNOWN'}</div>
+        <div class="sub-text">Logistic regression classifier (99.5% accuracy) evaluating structural fingerprint weights</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Stealth Score Breakdown</h2>
+      <div class="score-row">
+        <div class="score-big" style="color:${scoreColor(r.stealthScore)}">${r.stealthScore.toFixed(1)} <span class="of100">/ 100</span></div>
+      </div>
+      <div class="bars">
+        <div class="bar-row">
+          <span class="bar-label">JS Runtime Integrity</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${cat.js_runtime_integrity || 0}%; background:${scoreColor(cat.js_runtime_integrity || 0)}"></div></div>
+          <span class="bar-val" style="color:${scoreColor(cat.js_runtime_integrity || 0)}">${(cat.js_runtime_integrity || 0).toFixed(1)}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">Hardware Consistency</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${cat.hardware_consistency || 0}%; background:${scoreColor(cat.hardware_consistency || 0)}"></div></div>
+          <span class="bar-val" style="color:${scoreColor(cat.hardware_consistency || 0)}">${(cat.hardware_consistency || 0).toFixed(1)}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">TLS / Network Alignment</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${cat.tls_network_alignment || 0}%; background:${scoreColor(cat.tls_network_alignment || 0)}"></div></div>
+          <span class="bar-val" style="color:${scoreColor(cat.tls_network_alignment || 0)}">${(cat.tls_network_alignment || 0).toFixed(1)}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">Session Isolation</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${cat.session_isolation || 0}%; background:${scoreColor(cat.session_isolation || 0)}"></div></div>
+          <span class="bar-val" style="color:${scoreColor(cat.session_isolation || 0)}">${(cat.session_isolation || 0).toFixed(1)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Flags Raised (${flags.length})</h2>
+      ${flags.length === 0 ? '<div class="empty">No flags raised — this fingerprint looks genuine with zero suspicious anomalies.</div>' : `
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px">Sev</th>
+            <th style="width:200px">Code</th>
+            <th style="width:160px">Category</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${flags.map(f => `
+            <tr>
+              <td><span class="sev" style="background:${f.severity >= 4 ? 'rgba(248,81,73,0.2)' : (f.severity >= 2 ? 'rgba(210,153,34,0.2)' : 'rgba(63,185,80,0.2)')}; color:${sevColor(f.severity)}">${f.severity}</span></td>
+              <td><span class="flag-code">${esc(f.code)}</span></td>
+              <td style="color:var(--muted)">${esc(f.category)}</td>
+              <td style="color:#f0f6fc">${esc(f.description)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      `}
+    </div>
+
+    ${r.details ? `
+    <div class="card">
+      <h2>Captured Environment Details</h2>
+      <table>
+        <tbody>
+          <tr><td style="color:var(--muted);width:200px">GPU / WebGL Renderer</td><td><b>${esc(r.details.gpu)}</b></td></tr>
+          <tr><td style="color:var(--muted)">Screen Resolution</td><td><b>${esc(r.details.screen)}</b></td></tr>
+          <tr><td style="color:var(--muted)">CPU Hardware Concurrency</td><td><b>${esc(r.details.cores)} logical cores</b></td></tr>
+          <tr><td style="color:var(--muted)">Device Memory</td><td><b>${esc(r.details.memory)}</b></td></tr>
+          <tr><td style="color:var(--muted)">System Fonts Detected</td><td><b>${esc(r.details.fonts)} fonts</b></td></tr>
+          <tr><td style="color:var(--muted)">WebGL2 / WebGPU Support</td><td><b>WebGL2: ${r.details.webgl2 ? 'Yes' : 'No'} &middot; WebGPU: ${r.details.webgpu ? 'Yes' : 'No'}</b></td></tr>
+          <tr><td style="color:var(--muted)">TLS JA3 Fingerprint</td><td><code>${esc(r.details.ja3)}</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+
+    <details class="raw">
+      <summary>View Complete Report JSON</summary>
+      <pre>${esc(JSON.stringify(r, null, 2))}</pre>
+    </details>
+  `;
+
+  document.getElementById('reportContent').innerHTML = html;
+}
+
+async function loadLiveReport() {
+  document.getElementById('reportContent').innerHTML = '<div style="text-align:center;padding:4rem 1rem;color:var(--muted);">Auditing current browser environment...</div>';
+  
+  if (window.__cachedLive) {
+    renderReport(window.__cachedLive);
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/report');
+    if (res.ok) {
+      const data = await res.json();
+      const r = data.report;
+      const rep = {
+        userAgent: r.fingerprint.userAgent,
+        generatedAt: r.generatedAt,
+        stealthScore: r.analysis.stealthScore,
+        categoryScores: r.analysis.categoryScores,
+        ml: r.ml,
+        flags: r.analysis.flags,
+        details: {
+          gpu: r.fingerprint.webgl?.unmaskedRenderer || 'Standard GPU',
+          screen: `${r.fingerprint.device?.screenWidth}x${r.fingerprint.device?.screenHeight}`,
+          cores: r.fingerprint.device?.hardwareConcurrency || 4,
+          memory: `${r.fingerprint.device?.deviceMemory || 8} GB`,
+          fonts: (r.fingerprint.device?.fonts || []).length,
+          webgl2: r.fingerprint.webgl?.webgl2Supported !== false,
+          webgpu: r.fingerprint.webgl?.webgpuSupported !== false,
+          ja3: "Browser standard TLS 1.3",
+        }
+      };
+      window.__cachedLive = rep;
+      renderReport(rep);
+      return;
+    }
+  } catch (e) {}
+
+  // Fallback preset
+  window.__cachedLive = PRESETS.genuine;
+  renderReport(PRESETS.genuine);
+}
+
+function switchPreset(key) {
+  const btns = document.querySelectorAll('.tab-btn');
+  btns.forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  if (key === 'live') {
+    loadLiveReport();
+  } else {
+    renderReport(PRESETS[key]);
+  }
+}
+
+function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const json = JSON.parse(evt.target.result);
+      const rep = {
+        userAgent: json.userAgent || json.fingerprint?.userAgent || 'Custom Report',
+        generatedAt: json.generatedAt || new Date().toISOString(),
+        stealthScore: json.analysis?.stealthScore ?? json.stealthScore ?? 50.0,
+        categoryScores: json.analysis?.categoryScores ?? json.categoryScores ?? { js_runtime_integrity: 50, hardware_consistency: 50, tls_network_alignment: 50, session_isolation: 50 },
+        ml: json.ml || { probability: 0.5, verdict: 'uncertain' },
+        flags: json.analysis?.flags || json.flags || [],
+      };
+      renderReport(rep);
+    } catch (err) {
+      alert('Failed to parse report JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.addEventListener('DOMContentLoaded', () => loadLiveReport());
+</script>
+</body>
+</html>

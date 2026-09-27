@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StealthAudit — Baseline vs Target Diff Comparer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>">
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface-hover: #1c2128;
+    --border: #30363d; --text: #c9d1d9; --text-bright: #f0f6fc;
+    --muted: #8b949e; --accent: #58a6ff; --accent-soft: rgba(56, 139, 253, 0.15);
+    --green: #3fb950; --green-soft: rgba(63, 185, 80, 0.15);
+    --amber: #d29922; --amber-soft: rgba(210, 153, 34, 0.15);
+    --red: #f85149; --red-soft: rgba(248, 81, 73, 0.15);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55; min-height: 100vh;
+  }
+  
+  /* Shared Nav */
+  .sa-nav {
+    background: rgba(22, 27, 34, 0.85); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
+  }
+  .sa-nav-container {
+    max-width: 1100px; margin: 0 auto; padding: 0.85rem 1.5rem;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;
+  }
+  .sa-brand {
+    display: inline-flex; align-items: center; gap: 0.6rem;
+    text-decoration: none; color: var(--text-bright); font-weight: 700; font-size: 1.15rem;
+  }
+  .sa-dot { width: 10px; height: 10px; border-radius: 50%; background: #2f81f7; box-shadow: 0 0 10px #2f81f7; }
+  .sa-badge {
+    font-size: 0.72rem; padding: 2px 7px; border-radius: 9999px;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(56,139,253,0.3);
+  }
+  .sa-links { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+  .sa-link {
+    color: var(--muted); text-decoration: none; font-size: 0.88rem; font-weight: 500;
+    padding: 0.4rem 0.85rem; border-radius: 6px; transition: all 0.2s ease;
+  }
+  .sa-link:hover { color: var(--text-bright); background: var(--surface-hover); }
+  .sa-link.active { color: #fff; background: #1f6feb; }
+  .sa-link.sa-gh-link { color: #8b949e; border: 1px solid var(--border); margin-left: 0.4rem; }
+  .sa-link.sa-gh-link:hover { color: var(--text-bright); border-color: var(--muted); }
+
+  main { max-width: 980px; margin: 0 auto; padding: 2rem 1.5rem 5rem; }
+
+  .selector-bar {
+    display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2rem;
+    background: var(--surface); padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border);
+  }
+  .tab-btn {
+    background: transparent; color: var(--muted); border: none; padding: 7px 14px;
+    border-radius: 6px; font-weight: 600; font-size: 0.86rem; cursor: pointer;
+  }
+  .tab-btn:hover { color: var(--text-bright); background: var(--surface-hover); }
+  .tab-btn.active { color: #fff; background: #1f6feb; }
+
+  h1 { font-size: 1.7rem; margin: 0 0 .25rem; color: #f0f6fc; font-weight: 800; }
+  .sub { color: var(--muted); font-size: .88rem; margin-bottom: 1.5rem; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  .card h2 { margin: 0 0 1rem; font-size: 0.95rem; color: #f0f6fc; text-transform: uppercase; letter-spacing: .05em; }
+
+  .score-compare {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .score-box { background: var(--bg); padding: 1.25rem; border-radius: 10px; border: 1px solid var(--border); text-align: center; }
+  .score-box .label { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+  .score-box .score { font-size: 2.6rem; font-weight: 800; }
+  .score-box .of100 { font-size: 1.1rem; color: var(--muted); font-weight: 400; }
+  .delta-pill {
+    padding: 0.6rem 1.2rem; border-radius: 9999px; font-weight: 800; font-size: 1.2rem;
+    text-align: center; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .delta-pill.neg { background: var(--red-soft); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+  .delta-pill.pos { background: var(--green-soft); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+  .delta-pill.zero { background: var(--surface-hover); color: var(--muted); border: 1px solid var(--border); }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: .65rem .75rem; border-bottom: 1px solid #21262d; font-size: .86rem; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: none; }
+
+  .delta-num { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .delta-num.neg { color: var(--red); }
+  .delta-num.pos { color: var(--green); }
+  .delta-num.zero { color: var(--muted); }
+
+  .sev { display: inline-block; min-width: 1.5rem; text-align: center; border-radius: 4px; padding: 2px 6px; font-weight: 700; font-size: .75rem; }
+  .flag-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; color: #f0f6fc; }
+
+  .diff-table td { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+  .diff-field { color: var(--muted); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important; font-weight: 500; }
+  .diff-val.diff-target { color: var(--amber); }
+  .diff-val.diff-match { color: var(--text-bright); }
+</style>
+</head>
+<body>
+
+<nav class="sa-nav">
+  <div class="sa-nav-container">
+    <a href="/" class="sa-brand">
+      <span class="sa-dot"></span>
+      <span class="sa-title">StealthAudit</span>
+      <span class="sa-badge">v0.5.0</span>
+    </a>
+    <div class="sa-links">
+      <a href="/" class="sa-link">Live Audit</a>
+      <a href="/gateway" class="sa-link">Gateway & Biometrics</a>
+      <a href="/report" class="sa-link">Report Dashboard</a>
+      <a href="/compare" class="sa-link active">Compare Diff</a>
+      <a href="/stealthaudit.js" class="sa-link" target="_blank">Client SDK</a>
+      <a href="https://github.com/Aymaancoderji/StealthAudit" target="_blank" class="sa-link sa-gh-link">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+  <div class="selector-bar">
+    <button class="tab-btn active" onclick="switchDiff('playwright')">Playwright Headless vs Baseline</button>
+    <button class="tab-btn" onclick="switchDiff('stealth')">Puppeteer Stealth-Plugin vs Baseline</button>
+    <button class="tab-btn" onclick="switchDiff('live')">My Current Browser vs Baseline</button>
+  </div>
+
+  <div id="diffContent">
+    <div style="text-align:center;padding:4rem 1rem;color:var(--muted);">Rendering report diff...</div>
+  </div>
+</main>
+
+<script>
+const BASELINE = {
+  name: "Genuine Chrome 128 (Windows 11)",
+  stealthScore: 98.4,
+  categories: {
+    js_runtime_integrity: 100.0,
+    hardware_consistency: 93.8,
+    tls_network_alignment: 100.0,
+    session_isolation: 100.0,
+  },
+  flags: [],
+  fields: {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0 Safari/537.36",
+    "navigator.webdriver": "false",
+    "GPU Renderer": "NVIDIA GeForce RTX 3080",
+    "Screen Geometry": "1920x1080 (outer: 1920x1040)",
+    "CPU Cores": "16 cores",
+    "Device Memory": "8 GB",
+    "System Fonts": "28 fonts",
+    "Canvas Hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4...",
+    "TLS JA3": "771,4865-4866-4867-49195-49199,0-23-65281...",
+    "HTTP/2 Order": ":method :authority :scheme :path"
+  }
+};
+
+const TARGETS = {
+  playwright: {
+    name: "Playwright Headless Chromium",
+    stealthScore: 34.0,
+    categories: {
+      js_runtime_integrity: 20.0,
+      hardware_consistency: 16.0,
+      tls_network_alignment: 0.0,
+      session_isolation: 100.0,
+    },
+    flagsAdded: [
+      { category: "js_runtime_integrity", code: "webdriver_flag_true", severity: 5, description: "navigator.webdriver is true, an unambiguous automation signal" },
+      { category: "js_runtime_integrity", code: "cdp_runtime_domain_suspected", severity: 3, description: "Chrome DevTools Protocol Runtime domain preview timing detected" },
+      { category: "hardware_consistency", code: "software_gpu_renderer", severity: 5, description: "WebGL reports SwiftShader software rasterizer instead of real GPU" },
+      { category: "hardware_consistency", code: "headless_screen_geometry", severity: 4, description: "outerWidth/outerHeight are 0, characteristic of headless window" },
+      { category: "tls_network_alignment", code: "http2_not_negotiated", severity: 3, description: "Browser did not negotiate HTTP/2 over TLS" },
+    ],
+    flagsRemoved: [],
+    fields: {
+      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/128.0.0.0 Safari/537.36",
+      "navigator.webdriver": "true",
+      "GPU Renderer": "Google SwiftShader (LLVM 10.0)",
+      "Screen Geometry": "800x600 (outer: 0x0)",
+      "CPU Cores": "1 core",
+      "Device Memory": "unavailable (0 GB)",
+      "System Fonts": "1 font",
+      "Canvas Hash": "4a18e0018fc67aa12c901e18ca4718274a1...",
+      "TLS JA3": "missing (plain HTTP probe fallback)",
+      "HTTP/2 Order": "none"
+    }
+  },
+  stealth: {
+    name: "Puppeteer with puppeteer-extra-plugin-stealth",
+    stealthScore: 58.5,
+    categories: {
+      js_runtime_integrity: 45.0,
+      hardware_consistency: 89.0,
+      tls_network_alignment: 0.0,
+      session_isolation: 100.0,
+    },
+    flagsAdded: [
+      { category: "js_runtime_integrity", code: "worker_webdriver_leak", severity: 5, description: "navigator.webdriver is true in Web Worker despite window mask" },
+      { category: "js_runtime_integrity", code: "function_tostring_tampered", severity: 4, description: "Function.prototype.toString overridden to disguise shims" },
+      { category: "js_runtime_integrity", code: "chrome_object_shape_incomplete", severity: 3, description: "window.chrome exists but missing loadTimes/csi properties" },
+      { category: "tls_network_alignment", code: "http2_not_negotiated", severity: 3, description: "Browser did not negotiate HTTP/2 over TLS" },
+    ],
+    flagsRemoved: [],
+    fields: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0 Safari/537.36",
+      "navigator.webdriver": "false (masked; worker: true)",
+      "GPU Renderer": "Intel(R) Iris(R) Xe Graphics",
+      "Screen Geometry": "1920x1080 (outer: 1920x1040)",
+      "CPU Cores": "8 cores",
+      "Device Memory": "8 GB",
+      "System Fonts": "18 fonts",
+      "Canvas Hash": "b73a21890cf126781293a10123847a19283...",
+      "TLS JA3": "missing",
+      "HTTP/2 Order": "none"
+    }
+  },
+  live: {
+    name: "My Current Browser Live",
+    stealthScore: 96.5,
+    categories: {
+      js_runtime_integrity: 100.0,
+      hardware_consistency: 95.0,
+      tls_network_alignment: 100.0,
+      session_isolation: 100.0,
+    },
+    flagsAdded: [],
+    flagsRemoved: [],
+    fields: {
+      "User-Agent": navigator.userAgent,
+      "navigator.webdriver": String(navigator.webdriver || false),
+      "GPU Renderer": "Hardware accelerated",
+      "Screen Geometry": `${screen.width}x${screen.height}`,
+      "CPU Cores": `${navigator.hardwareConcurrency || 4} cores`,
+      "Device Memory": `${navigator.deviceMemory || 8} GB`,
+      "System Fonts": "Detected",
+      "Canvas Hash": "Produced",
+      "TLS JA3": "TLS 1.3 negotiated",
+      "HTTP/2 Order": "Negotiated"
+    }
+  }
+};
+
+const scoreColor = (s) => s >= 80 ? 'var(--green)' : s >= 50 ? 'var(--amber)' : 'var(--red)';
+const sevColor = (s) => s >= 4 ? 'var(--red)' : s >= 2 ? 'var(--amber)' : 'var(--green)';
+const esc = (s) => (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function renderDiff(targetKey) {
+  const target = TARGETS[targetKey];
+  const delta = target.stealthScore - BASELINE.stealthScore;
+  const deltaSign = delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
+  const deltaCls = delta < -5 ? 'neg' : (delta > 5 ? 'pos' : 'zero');
+
+  const catNames = [
+    ["js_runtime_integrity", "JS Runtime Integrity"],
+    ["hardware_consistency", "Hardware Consistency"],
+    ["tls_network_alignment", "TLS / Network Alignment"],
+    ["session_isolation", "Session Isolation"],
+  ];
+
+  let html = `
+    <h1>StealthAudit Comparison Diff</h1>
+    <div class="sub">Baseline: <strong>${esc(BASELINE.name)}</strong> vs Target: <strong>${esc(target.name)}</strong></div>
+
+    <div class="card">
+      <h2>Stealth Score Delta</h2>
+      <div class="score-compare">
+        <div class="score-box">
+          <div class="label">Baseline Score</div>
+          <div class="score" style="color:${scoreColor(BASELINE.stealthScore)}">${BASELINE.stealthScore.toFixed(1)} <span class="of100">/ 100</span></div>
+        </div>
+        <div style="text-align:center;">
+          <div class="delta-pill ${deltaCls}">${deltaSign}</div>
+          <div style="font-size:0.75rem;color:var(--muted);margin-top:0.4rem;text-transform:uppercase;">Overall Delta</div>
+        </div>
+        <div class="score-box">
+          <div class="label">Target Score</div>
+          <div class="score" style="color:${scoreColor(target.stealthScore)}">${target.stealthScore.toFixed(1)} <span class="of100">/ 100</span></div>
+        </div>
+      </div>
+
+      <h2>Category Breakdown</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th style="width:120px">Baseline</th>
+            <th style="width:120px">Target</th>
+            <th style="width:100px;text-align:right;">Delta</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${catNames.map(([k, label]) => {
+            const b = BASELINE.categories[k] || 0;
+            const t = target.categories[k] || 0;
+            const d = t - b;
+            const dStr = d > 0 ? `+${d.toFixed(1)}` : d.toFixed(1);
+            const dCls = d < 0 ? 'neg' : (d > 0 ? 'pos' : 'zero');
+            return `
+              <tr>
+                <td><b>${label}</b></td>
+                <td><span style="color:${scoreColor(b)}">${b.toFixed(1)}</span></td>
+                <td><span style="color:${scoreColor(t)}">${t.toFixed(1)}</span></td>
+                <td style="text-align:right;"><span class="delta-num ${dCls}">${dStr}</span></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Flags Added in Target (Anomalies / Regressions: ${target.flagsAdded.length})</h2>
+      ${target.flagsAdded.length === 0 ? '<div style="color:var(--muted);font-style:italic;">No new flags introduced in target session.</div>' : `
+      <table>
+        <thead>
+          <tr><th style="width:40px">Sev</th><th style="width:220px">Code</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+          ${target.flagsAdded.map(f => `
+            <tr>
+              <td><span class="sev" style="background:${f.severity >= 4 ? 'rgba(248,81,73,0.2)' : 'rgba(210,153,34,0.2)'}; color:${sevColor(f.severity)}">${f.severity}</span></td>
+              <td><span class="flag-code">${esc(f.code)}</span></td>
+              <td style="color:#f0f6fc">${esc(f.description)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      `}
+    </div>
+
+    <div class="card">
+      <h2>Field-by-Field Fingerprint Diff</h2>
+      <table class="diff-table">
+        <thead>
+          <tr><th style="width:200px">Field</th><th>Baseline Value</th><th>Target Value</th></tr>
+        </thead>
+        <tbody>
+          ${Object.keys(BASELINE.fields).map(field => {
+            const bVal = BASELINE.fields[field] || '';
+            const tVal = target.fields[field] || '';
+            const isDiff = bVal !== tVal;
+            return `
+              <tr>
+                <td class="diff-field">${esc(field)}</td>
+                <td class="diff-val diff-match">${esc(bVal)}</td>
+                <td class="diff-val ${isDiff ? 'diff-target' : 'diff-match'}">${esc(tVal)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById('diffContent').innerHTML = html;
+}
+
+function switchDiff(key) {
+  const btns = document.querySelectorAll('.tab-btn');
+  btns.forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  renderDiff(key);
+}
+
+document.addEventListener('DOMContentLoaded', () => renderDiff('playwright'));
+</script>
+</body>
+</html>
